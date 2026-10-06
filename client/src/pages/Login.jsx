@@ -10,7 +10,8 @@ export default function Login({ error, devAuth }) {
   return (
     <div className="min-h-dvh grid place-items-center p-6 bg-ink">
       <div className="w-full max-w-sm rounded-3xl bg-white p-6 text-center space-y-5 shadow-xl">
-        <img src="icon.svg" alt="" className="w-16 h-16 mx-auto" />
+        <img src="buu-eng-logo.png" alt="มหาวิทยาลัยบูรพา คณะวิศวกรรมศาสตร์" className="h-12 mx-auto" />
+        <div className="h-px bg-gold w-16 mx-auto" />
         <div>
           <h1 className="text-2xl font-bold">บูรพาร่วมฟื้นฟูหลังน้ำท่วม</h1>
           <p className="text-golddark font-semibold">BUU Flood Recovery</p>

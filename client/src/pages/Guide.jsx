@@ -37,7 +37,10 @@ export default function Guide({ standalone, section }) {
             <button key={s} onClick={() => jump(s)} className="rounded-full bg-goldpale px-3 py-1">{s}</button>
           ))}
         </nav>
-        <article className="card guide" dangerouslySetInnerHTML={{ __html: html }} />
+        <article className="card guide">
+          <img src="buu-eng-logo.png" alt="มหาวิทยาลัยบูรพา คณะวิศวกรรมศาสตร์" className="h-10 mb-3" />
+          <div dangerouslySetInnerHTML={{ __html: html }} />
+        </article>
       </div>
     </div>
   );

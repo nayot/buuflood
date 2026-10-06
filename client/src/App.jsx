@@ -110,6 +110,7 @@ export default function App() {
     <div className="min-h-dvh pb-24">
       <header className="sticky top-0 z-[1000] bg-ink text-white">
         <div className="mx-auto max-w-3xl px-4 py-2 flex items-center gap-3">
+          <img src="buu-eng-logo.png" alt="BUU ENG" className="hidden sm:block h-9 rounded-md bg-white px-1.5 py-1 shrink-0" />
           <div className="flex-1 min-w-0">
             <div className="font-bold leading-tight truncate">บูรพาร่วมฟื้นฟู<span className="text-gold">หลังน้ำท่วม</span></div>
             <div className="text-xs text-neutral-300 truncate">{me.name} · {ROLE_LABEL[me.role]}</div>
@@ -130,6 +131,7 @@ export default function App() {
               </label>
               <a href="#/guide" className="block p-2 rounded-lg hover:bg-neutral-100">📖 คู่มือการใช้งาน</a>
               <div className="px-2 pb-2 text-xs text-neutral-500">{me.email}</div>
+              <img src="buu-eng-logo.png" alt="มหาวิทยาลัยบูรพา คณะวิศวกรรมศาสตร์" className="h-8 mx-2 mb-2" />
               <button onClick={logout} className="w-full text-left p-2 rounded-lg hover:bg-neutral-100">ออกจากระบบ</button>
             </div>
           </details>
