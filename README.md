@@ -68,7 +68,7 @@ With `DEV_AUTH=1` (never in production) you can sign in without Google:
    `https://eng-ai.buu.ac.th/buuflood/auth/callback`.
 2. On the server:
    ```bash
-   git clone https://github.com/<you>/buuflood && cd buuflood
+   git clone https://github.com/nayot/buuflood && cd buuflood
    cp .env.example .env && nano .env      # fill in the OAuth client and secrets, NODE_ENV is set by compose
    docker compose up -d --build
    ```
