@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, timeAgo } from '../lib/api.js';
-import { SPECIALTIES } from '../../../shared/triage.js';
-import { Empty } from '../components/ui.jsx';
+import { SPECIALTIES, parseSpecialties } from '../../../shared/triage.js';
+import { Empty, Check } from '../components/ui.jsx';
 
 const ROLES = { volunteer: 'อาสาสมัคร', responder: 'ผู้เชี่ยวชาญ', office: 'เจ้าหน้าที่ (อบต./ศูนย์ช่วยเหลือ)', admin: 'ผู้ดูแลระบบ' };
 
@@ -30,17 +30,29 @@ export default function Users({ me, notify }) {
             <div className="font-semibold">{u.name}</div>
             <div className="text-xs text-neutral-500">{u.email} · เข้าใช้ {timeAgo(u.last_login)}</div>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div>
             <select value={u.role} disabled={u.id === me.id} onChange={(e) => save(u, { role: e.target.value })}>
               {Object.entries(ROLES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
-            {u.role === 'responder' && (
-              <select value={u.specialty || ''} onChange={(e) => save(u, { specialty: e.target.value || null })}>
-                <option value="">— ด้าน —</option>
-                {Object.entries(SPECIALTIES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-              </select>
-            )}
           </div>
+          {u.role === 'responder' && (
+            <div className="space-y-1">
+              <span className="label">ด้านที่รับผิดชอบ (เลือกได้หลายด้าน)</span>
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(SPECIALTIES).map(([k, l]) => {
+                  const mine = parseSpecialties(u.specialty);
+                  const on = mine.includes(k);
+                  return (
+                    <Check key={k} checked={on}
+                      onChange={(c) => save(u, { specialty: (c ? [...mine, k] : mine.filter((x) => x !== k)).join(',') })}>
+                      {l}
+                    </Check>
+                  );
+                })}
+              </div>
+              {parseSpecialties(u.specialty).length === 0 && <p className="text-xs text-lvred">ยังไม่ได้เลือกด้าน: จะยังไม่เห็นงานใด ๆ</p>}
+            </div>
+          )}
         </div>
       ))}
     </div>

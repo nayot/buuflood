@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { db, json, UPLOAD_DIR } from './db.js';
 import { encrypt, decrypt, maskId, makePrintToken, readPrintToken } from './crypto.js';
 import { renderForm, renderExpired } from './print.js';
-import { triage, ticketsFor, CATEGORIES, LEVELS, TICKET_STATUS, NEEDS } from '../shared/triage.js';
+import { triage, ticketsFor, CATEGORIES, LEVELS, TICKET_STATUS, NEEDS, parseSpecialties } from '../shared/triage.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROD = process.env.NODE_ENV === 'production';
@@ -86,12 +86,12 @@ app.get('/auth/callback', async (req, res) => {
 });
 
 if (DEV_AUTH) {
-  // Local testing only: /auth/dev?email=someone@eng.buu.ac.th&role=responder&specialty=electrical
+  // Local testing only: /auth/dev?email=someone@eng.buu.ac.th&role=responder&specialty=electrical,structural
   app.get('/auth/dev', (req, res) => {
     const email = String(req.query.email || 'dev@eng.buu.ac.th');
     if (!allowedEmail(email)) return res.status(403).send('domain not allowed');
     const uid = upsertUser({ email, name: email.split('@')[0] });
-    if (req.query.role) db.prepare('UPDATE users SET role = ?, specialty = ? WHERE id = ?').run(String(req.query.role), req.query.specialty ? String(req.query.specialty) : null, uid);
+    if (req.query.role) db.prepare('UPDATE users SET role = ?, specialty = ? WHERE id = ?').run(String(req.query.role), parseSpecialties(req.query.specialty).join(',') || null, uid);
     req.session = { uid };
     res.redirect(`${PUBLIC_URL}/#/`);
   });
@@ -116,7 +116,7 @@ const need = (...roles) => (req, res, next) => {
 app.get('/api/me', (req, res) => {
   if (!req.user) return res.json({ user: null, devAuth: DEV_AUTH });
   const { id, email, name, picture, role, specialty } = req.user;
-  res.json({ user: { id, email, name, picture, role, specialty } });
+  res.json({ user: { id, email, name, picture, role, specialty, specialties: parseSpecialties(specialty) } });
 });
 
 // ---------------------------------------------------------------- visits
@@ -293,8 +293,11 @@ function ticketScope(user) {
   if (user.role === 'admin') return { where: '1=1', args: [] };
   if (user.role === 'office') return { where: "(t.category IN ('basic','general') OR t.level = 'red')", args: [] };
   if (user.role === 'responder') {
-    const cats = Object.entries(CATEGORIES).filter(([, c]) => c.specialty === user.specialty || c.specialty === 'any').map(([k]) => k);
-    return { where: `(t.category IN (${cats.map(() => '?').join(',') || "''"}) OR t.level = 'red')`, args: cats };
+    // Only the categories of the responder's own specialties, whatever the level.
+    const mine = parseSpecialties(user.specialty);
+    const cats = Object.entries(CATEGORIES).filter(([, c]) => mine.includes(c.specialty)).map(([k]) => k);
+    if (!cats.length) return { where: '0 = 1', args: [] };
+    return { where: `t.category IN (${cats.map(() => '?').join(',')})`, args: cats };
   }
   return null;
 }
@@ -399,7 +402,8 @@ app.get('/api/users', need('admin'), (req, res) => {
 app.patch('/api/users/:id', need('admin'), (req, res) => {
   const { role, specialty } = req.body || {};
   if (!['volunteer', 'responder', 'office', 'admin'].includes(role)) return res.status(400).json({ error: 'role' });
-  db.prepare('UPDATE users SET role = ?, specialty = ? WHERE id = ?').run(role, role === 'responder' ? str(specialty, 20) : null, Number(req.params.id));
+  const list = role === 'responder' ? parseSpecialties(specialty).join(',') || null : null;
+  db.prepare('UPDATE users SET role = ?, specialty = ? WHERE id = ?').run(role, list, Number(req.params.id));
   res.json({ ok: true });
 });
 

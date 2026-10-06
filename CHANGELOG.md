@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1 — 2026-10-07
+
+- **Several specialties per responder:** an admin can tick more than one area (for example ไฟฟ้า and โครงสร้างบ้าน).
+  They're stored as a comma-separated list, and existing single specialties still work.
+- **Responders see only tickets in their own specialties, at every level.** They no longer see red tickets from
+  other areas; office staff and admins still see every red ticket. "Other needs" tickets now go to the office.
+- The ticket list shows the responder's areas, or a warning if none are set.
+
 ## 1.0.0 — 2026-10-06
 
 First release, for the field days in ต.โขมง อ.ท่าใหม่ จ.จันทบุรี (10–11 Oct 2026).

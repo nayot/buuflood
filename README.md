@@ -25,8 +25,8 @@ Volunteer visits a house ──► needs checklist + GPS + photos ──► tria
 | Role | Can do |
 |---|---|
 | `volunteer` (default on first login) | Record visits, see own visits, share location |
-| `responder` + specialty | Tickets for their specialty plus every red ticket; claim, update, close, navigate |
-| `office` | All visits, supply tickets, print links, dashboard |
+| `responder` + one or more specialties | Tickets in their specialties only; claim, update, close, navigate |
+| `office` | All visits, supply and other tickets, every red ticket, print links, dashboard |
 | `admin` | Everything, plus assigning roles |
 
 - **Sign-in:** Google, limited to `@go.buu.ac.th` and `@eng.buu.ac.th` (`ALLOWED_DOMAINS`).
@@ -60,7 +60,7 @@ npm run dev               # server :3000 + Vite :5173
 ```
 
 With `DEV_AUTH=1` (never in production) you can sign in without Google:
-`http://localhost:5173/auth/dev?email=you@eng.buu.ac.th&role=responder&specialty=electrical`.
+`http://localhost:5173/auth/dev?email=you@eng.buu.ac.th&role=responder&specialty=electrical,structural`.
 
 ## Deployment (Docker + nginx)
 

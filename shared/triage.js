@@ -15,14 +15,14 @@ export const LEVEL_LABELS = {
 };
 
 // Ticket categories. `specialty` is the responder specialty that handles it;
-// `office` means the office role (อบต. / Help Centre) handles it.
+// `office` means the office role (อบต. / Help Centre) handles it. Responders see only their own specialties.
 export const CATEGORIES = {
   electrical: { label: 'ไฟฟ้า', icon: '⚡', specialty: 'electrical' },
   structural: { label: 'โครงสร้างบ้าน', icon: '🏠', specialty: 'structural' },
   physical: { label: 'สุขภาพกาย', icon: '🩺', specialty: 'physical' },
   mental: { label: 'สุขภาพใจ', icon: '💛', specialty: 'mental' },
   basic: { label: 'อาหาร น้ำ เสื้อผ้า', icon: '🍚', specialty: 'office' },
-  general: { label: 'อื่น ๆ', icon: '📌', specialty: 'any' },
+  general: { label: 'อื่น ๆ', icon: '📌', specialty: 'office' },
 };
 
 export const SPECIALTIES = {
@@ -31,6 +31,12 @@ export const SPECIALTIES = {
   physical: 'สุขภาพกาย',
   mental: 'สุขภาพใจ',
 };
+
+// A responder can have several specialties, stored as a comma-separated list ("electrical,structural").
+export function parseSpecialties(value) {
+  const list = Array.isArray(value) ? value : String(value || '').split(',');
+  return [...new Set(list.map((s) => String(s).trim()).filter((s) => s in SPECIALTIES))];
+}
 
 // The needs checklist the volunteer asks about. Each item belongs to a category and has a level.
 export const NEEDS = [

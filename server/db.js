@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT,
   picture TEXT,
   role TEXT NOT NULL DEFAULT 'volunteer',      -- volunteer | responder | office | admin
-  specialty TEXT,                               -- electrical | structural | physical | mental (responders)
+  specialty TEXT,                               -- responders: comma-separated electrical,structural,physical,mental
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   last_login TEXT
 );

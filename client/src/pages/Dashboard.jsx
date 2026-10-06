@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, CircleMarker, Popup, Marker, useMap } from 're
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { api, addressLine, timeAgo, placeLink } from '../lib/api.js';
-import { NEEDS, CATEGORIES, LEVEL_LABELS, SPECIALTIES } from '../../../shared/triage.js';
+import { NEEDS, CATEGORIES, LEVEL_LABELS, SPECIALTIES, parseSpecialties } from '../../../shared/triage.js';
 import { LEVEL_COLOR } from '../components/ui.jsx';
 
 // Default view: BUU Chanthaburi Campus area (ต.โขมง อ.ท่าใหม่).
@@ -105,7 +105,7 @@ export default function Dashboard() {
           ))}
           {showTeam && d.team.map((m, i) => (
             <Marker key={i} position={[m.lat, m.lng]} icon={personIcon}>
-              <Popup><b>{m.name}</b><br />{ROLE[m.role]}{m.specialty ? ` (${SPECIALTIES[m.specialty] || m.specialty})` : ''}<br />อัปเดต {timeAgo(m.at)}</Popup>
+              <Popup><b>{m.name}</b><br />{ROLE[m.role]}{m.specialty ? ` (${parseSpecialties(m.specialty).map((s) => SPECIALTIES[s]).join(', ')})` : ''}<br />อัปเดต {timeAgo(m.at)}</Popup>
             </Marker>
           ))}
         </MapContainer>

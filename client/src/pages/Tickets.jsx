@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, addressLine, navLink, canLocate, timeAgo } from '../lib/api.js';
-import { NEEDS, CATEGORIES, TICKET_STATUS } from '../../../shared/triage.js';
+import { NEEDS, CATEGORIES, TICKET_STATUS, SPECIALTIES } from '../../../shared/triage.js';
 import { LevelBadge, Empty, LEVEL_COLOR } from '../components/ui.jsx';
 
 function TicketCard({ t, me, reload, notify }) {
@@ -77,8 +77,10 @@ export default function Tickets({ me, notify, onChange }) {
         <button onClick={() => setClosed(true)} className={`rounded-full px-3 py-1.5 ${closed ? 'bg-ink text-white' : 'bg-white'}`}>ปิดแล้ว</button>
         <label className="ml-auto flex items-center gap-2"><input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} />ของฉัน</label>
       </div>
-      {me.role === 'responder' && !me.specialty && (
-        <div className="card bg-goldpale text-sm">ยังไม่ได้กำหนดความเชี่ยวชาญ จึงเห็นเฉพาะงานระดับแดง ติดต่อผู้ดูแลระบบ</div>
+      {me.role === 'responder' && (
+        me.specialties?.length
+          ? <div className="text-sm text-neutral-500 px-1">ด้านของคุณ: {me.specialties.map((s) => SPECIALTIES[s]).join(' · ')}</div>
+          : <div className="card bg-goldpale text-sm">ยังไม่ได้กำหนดด้านที่รับผิดชอบ จึงยังไม่เห็นงาน ติดต่อผู้ดูแลระบบ</div>
       )}
       {rows === null ? <Empty>กำลังโหลด…</Empty> : shown.length === 0 ? <Empty>ไม่มีงาน</Empty>
         : shown.map((t) => <TicketCard key={t.id} t={t} me={me} reload={load} notify={notify} />)}
