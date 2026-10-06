@@ -18,6 +18,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY server ./server
 COPY shared ./shared
+COPY scripts ./scripts
 COPY --from=client /build/client/dist ./client/dist
 RUN mkdir -p /app/data/uploads && chown -R node:node /app/data
 USER node

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.2 — 2026-10-07
+
+- The Docker image now includes `scripts/`, so household data can be purged with
+  `docker compose exec app node scripts/purge.js --all --yes` (user accounts are kept). README documents backup and purge.
+
 ## 1.0.1 — 2026-10-07
 
 - **Several specialties per responder:** an admin can tick more than one area (for example ไฟฟ้า and โครงสร้างบ้าน).

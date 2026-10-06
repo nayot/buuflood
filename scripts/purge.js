@@ -1,7 +1,8 @@
 // Delete household data (visits, tickets, photos, check-ins) for PDPA retention.
 //   npm run purge -- --older-than 90     delete visits older than 90 days
 //   npm run purge -- --all --yes         delete everything except user accounts
-// In Docker: docker compose exec app node scripts/purge.js --older-than 90
+// In Docker (1.0.2+): docker compose exec app node scripts/purge.js --older-than 90
+// Back up first:       docker compose cp app:/app/data ./backup-$(date +%F)
 import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';

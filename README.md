@@ -46,7 +46,13 @@ Volunteer visits a house ──► needs checklist + GPS + photos ──► tria
   encrypted at rest (AES-256-GCM, key `DATA_KEY`).
 - Responders see the phone number (to call ahead) but only a masked ID. Full details are visible to the
   volunteer who collected them, office staff and admins.
-- Delete household data when the project ends: `npm run purge -- --older-than 90` or `--all --yes`.
+- Delete household data (visits, tickets, photos, check-ins; user accounts are kept). Back up first:
+  ```bash
+  docker compose cp app:/app/data ./backup-$(date +%F)
+  docker compose exec app node scripts/purge.js --all --yes          # everything, e.g. after testing
+  docker compose exec app node scripts/purge.js --older-than 90      # older than 90 days
+  ```
+  Outside Docker: `npm run purge -- --all --yes`. Make sure no phone still shows "รอส่ง", or those visits upload again.
 - This repository contains no real data. Never commit `.env` or `data/`.
 
 ## Local development
