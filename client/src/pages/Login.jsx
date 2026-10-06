@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Copyright from '../components/Copyright.jsx';
 
 const ERRORS = {
   domain: 'กรุณาใช้บัญชี @go.buu.ac.th หรือ @eng.buu.ac.th',
@@ -31,6 +32,7 @@ export default function Login({ error, devAuth }) {
             <button className="btn-ghost w-full">เข้าสู่ระบบทดสอบ</button>
           </form>
         )}
+        <Copyright className="pt-2" />
       </div>
     </div>
   );

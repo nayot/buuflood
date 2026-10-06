@@ -3,7 +3,8 @@ import { NEEDS, CATEGORIES, triage, ticketsFor, LEVEL_LABELS, RELIEF_CASES, RESI
 import { Section, Field, Check, Radio, LevelBadge } from '../components/ui.jsx';
 import { getPosition, compressPhoto, uuid } from '../lib/device.js';
 import { enqueue } from '../lib/outbox.js';
-import { mapsLink, validThaiId } from '../lib/api.js';
+import { mapsLink, validThaiId, geocode } from '../lib/api.js';
+import PinPicker from '../components/PinPicker.jsx';
 import { go } from '../lib/nav.js';
 
 // The area fields are remembered between visits: volunteers usually work one tambon at a time.
@@ -12,6 +13,7 @@ const loadArea = () => { try { return JSON.parse(localStorage.getItem('area') ||
 
 const blank = () => ({
   uuid: uuid(),
+  location_source: 'gps', // 'address' when the villager is met away from home
   consent: false,
   title: '', first_name: '', last_name: '', age: '', national_id: '', phone: '',
   residence_type: 'registered', residence_other: '',
@@ -27,6 +29,11 @@ export default function NewVisit({ notify }) {
   const [pos, setPos] = useState(null);
   const [posErr, setPosErr] = useState(null);
   const [locating, setLocating] = useState(false);
+  const [pin, setPin] = useState(null);        // house position picked on the map (address mode)
+  const [mapCenter, setMapCenter] = useState(null);
+  const [showMap, setShowMap] = useState(false);
+  const [finding, setFinding] = useState(false);
+  const byAddress = v.location_source === 'address';
   const [photos, setPhotos] = useState([]); // { blob, url }
   const [saving, setSaving] = useState(false);
 
@@ -56,19 +63,33 @@ export default function NewVisit({ notify }) {
   };
 
   const idInvalid = v.national_id && !validThaiId(v.national_id);
+  const a = v.address;
+  const addressComplete = !!(a.tambon && a.amphoe && a.province && (a.house_no || a.moo));
+
+  const findOnMap = async () => {
+    setShowMap(true); setFinding(true);
+    const hit = await geocode(a);
+    setMapCenter(hit || pos || null);
+    if (!hit) notify(navigator.onLine ? 'หาที่อยู่บนแผนที่ไม่พบ เลื่อนแผนที่แล้วแตะตำแหน่งบ้าน' : 'ไม่มีสัญญาณ บันทึกด้วยที่อยู่ได้ ไม่ต้องปักหมุด');
+    setFinding(false);
+  };
 
   const submit = async (e) => {
     e.preventDefault();
     if (!v.answers.needs.length && !v.answers.other_need.trim() && !v.override_level) return notify('กรุณาเลือกความต้องการอย่างน้อย 1 ข้อ');
     if (v.override_level && !v.override_reason.trim()) return notify('กรุณาระบุเหตุผลที่ปรับระดับ');
-    if (!pos && !confirm('ยังไม่มีตำแหน่ง GPS บันทึกต่อหรือไม่?')) return;
+    if (!v.first_name.trim() || !v.last_name.trim()) return notify('กรุณากรอกชื่อและนามสกุลของผู้ประสบภัย');
+    if (byAddress && !addressComplete) return notify('ใช้ที่อยู่ระบุตำแหน่ง: กรุณากรอกบ้านเลขที่หรือหมู่ ตำบล อำเภอ จังหวัด ในข้อ 4');
+    if (!byAddress && !pos && !confirm('ยังไม่มีตำแหน่ง GPS บันทึกต่อหรือไม่?')) return;
     setSaving(true);
     try {
       localStorage.setItem('area', JSON.stringify(Object.fromEntries(AREA_KEYS.map((k) => [k, v.address[k]]))));
     } catch { /* ignore */ }
     const data = {
       ...v,
-      ...(pos || {}),
+      // House position: GPS at the house, or the map pin (or none) when located by address.
+      ...(byAddress ? { lat: pin?.lat ?? null, lng: pin?.lng ?? null, accuracy: null } : (pos || {})),
+      here: pos, // where the volunteer is, for the safety check-in
       visited_at: new Date().toISOString(),
       override_level: v.override_level || null,
       ...(v.consent ? {} : { national_id: '', phone: '' }),
@@ -77,7 +98,7 @@ export default function NewVisit({ notify }) {
     photos.forEach((p) => URL.revokeObjectURL(p.url));
     setSaving(false);
     notify(saved.length ? 'บันทึกและส่งแล้ว' : 'บันทึกไว้ในเครื่องแล้ว จะส่งอัตโนมัติเมื่อมีสัญญาณ');
-    setV(blank()); setPhotos([]); window.scrollTo(0, 0);
+    setV(blank()); setPhotos([]); setPin(null); setShowMap(false); setMapCenter(null); window.scrollTo(0, 0);
     go('/visits');
   };
 
@@ -88,7 +109,7 @@ export default function NewVisit({ notify }) {
       <h1 className="text-xl font-bold px-1">บันทึกการเยี่ยมบ้าน</h1>
 
       <Section title="1. ตำแหน่งบ้าน">
-        {pos ? (
+        {byAddress ? null : pos ? (
           <div className="flex items-center gap-3 text-sm">
             <span className="text-2xl">📍</span>
             <div className="flex-1">
@@ -100,9 +121,34 @@ export default function NewVisit({ notify }) {
         ) : (
           <p className="text-sm text-neutral-500">{locating ? 'กำลังหาตำแหน่ง…' : posErr || 'ยังไม่มีตำแหน่ง'}</p>
         )}
-        <button type="button" onClick={locate} disabled={locating} className="btn-ghost w-full">
-          {locating ? 'กำลังหาตำแหน่ง…' : pos ? 'หาตำแหน่งใหม่' : 'ใช้ตำแหน่งปัจจุบัน'}
-        </button>
+        {!byAddress && (
+          <button type="button" onClick={locate} disabled={locating} className="btn-ghost w-full">
+            {locating ? 'กำลังหาตำแหน่ง…' : pos ? 'หาตำแหน่งใหม่' : 'ใช้ตำแหน่งปัจจุบัน'}
+          </button>
+        )}
+        <Check checked={byAddress} onChange={(on) => { set({ location_source: on ? 'address' : 'gps' }); if (!on) { setPin(null); setShowMap(false); } }}>
+          <b>ไม่ได้พบที่บ้าน: ใช้ที่อยู่ระบุตำแหน่งบ้านแทน</b>
+          <div className="text-sm text-neutral-500">เช่น พบที่ศูนย์พักพิง วัด หรือจุดบริการ ตำแหน่ง GPS ตอนนี้จะไม่ถูกใช้เป็นตำแหน่งบ้าน</div>
+        </Check>
+        {byAddress && (
+          <div className="space-y-2">
+            <p className={`text-sm ${addressComplete ? 'text-lvgreen' : 'text-lvred'}`}>
+              {addressComplete ? '✓ ที่อยู่ครบ ทีมจะนำทางด้วยที่อยู่นี้' : 'กรอกบ้านเลขที่หรือหมู่ ตำบล อำเภอ จังหวัด ในข้อ 4 ให้ครบ'}
+            </p>
+            {!showMap ? (
+              <button type="button" onClick={findOnMap} className="btn-ghost w-full">🗺️ ปักหมุดบ้านบนแผนที่ (ถ้าทราบ)</button>
+            ) : (
+              <>
+                <p className="text-sm text-neutral-500">{finding ? 'กำลังค้นหาที่อยู่…' : 'แตะแผนที่ที่ตำแหน่งบ้าน (ถามผู้ประสบภัยให้ช่วยชี้)'}</p>
+                <PinPicker pin={pin} center={mapCenter} onPick={setPin} />
+                <div className="flex items-center justify-between text-sm">
+                  <span>{pin ? `📍 ${pin.lat}, ${pin.lng}` : 'ยังไม่ได้ปักหมุด'}</span>
+                  {pin && <button type="button" onClick={() => setPin(null)} className="text-golddark underline">ล้างหมุด</button>}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </Section>
 
       <Section title="2. ความต้องการ" hint="ถามด้วยความเห็นอกเห็นใจ เลือกทุกข้อที่พบ">
@@ -165,10 +211,10 @@ export default function NewVisit({ notify }) {
               {['นาย', 'นาง', 'นางสาว', 'ด.ช.', 'ด.ญ.'].map((t) => <option key={t}>{t}</option>)}
             </select>
           </Field>
-          <Field label="ชื่อ" className="col-span-2"><input value={v.first_name} onChange={(e) => set({ first_name: e.target.value })} /></Field>
+          <Field label="ชื่อ *" className="col-span-2"><input required value={v.first_name} onChange={(e) => set({ first_name: e.target.value })} /></Field>
         </div>
         <div className="grid grid-cols-3 gap-2">
-          <Field label="นามสกุล" className="col-span-2"><input value={v.last_name} onChange={(e) => set({ last_name: e.target.value })} /></Field>
+          <Field label="นามสกุล *" className="col-span-2"><input required value={v.last_name} onChange={(e) => set({ last_name: e.target.value })} /></Field>
           <Field label="อายุ"><input inputMode="numeric" value={v.age} onChange={(e) => set({ age: e.target.value.replace(/\D/g, '').slice(0, 3) })} /></Field>
         </div>
         {v.consent && (

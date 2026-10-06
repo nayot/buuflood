@@ -153,6 +153,7 @@ function serializeVisit(v, level) {
     triage_level: v.triage_level, triage: json(v.triage, {}),
     override_level: v.override_level, override_reason: v.override_reason, notes: v.notes,
     level: v.override_level || v.triage_level,
+    location_source: v.location_source || 'gps',
   };
   const id = decrypt(v.national_id_enc);
   out.phone = decrypt(v.phone_enc);
@@ -177,6 +178,12 @@ app.post('/api/visits', need(), upload.array('photos', 10), (req, res) => {
     other_need: str(d.answers?.other_need, 500),
   };
   const result = triage(answers);
+  if (!str(d.first_name) || !str(d.last_name)) return res.status(400).json({ error: 'name required' });
+  const locationSource = d.location_source === 'address' ? 'address' : 'gps';
+  const a0 = d.address || {};
+  if (locationSource === 'address' && !(str(a0.tambon) && str(a0.amphoe) && str(a0.province) && (str(a0.house_no) || str(a0.moo)))) {
+    return res.status(400).json({ error: 'address required' });
+  }
   const override = LEVELS.includes(d.override_level) ? d.override_level : null;
   if (override && !str(d.override_reason)) return res.status(400).json({ error: 'override reason required' });
   const consent = d.consent ? 1 : 0;
@@ -189,8 +196,9 @@ app.post('/api/visits', need(), upload.array('photos', 10), (req, res) => {
     const visitId = Number(db.prepare(`INSERT INTO visits
       (uuid, created_by, visited_at, lat, lng, accuracy, consent, title, first_name, last_name, age,
        national_id_enc, phone_enc, residence_type, residence_other, address, flood_from, flood_to,
-       relief_case, damage_desc, promptpay, evidence, answers, triage_level, triage, override_level, override_reason, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+       relief_case, damage_desc, promptpay, evidence, answers, triage_level, triage, override_level, override_reason, notes,
+       location_source)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       String(d.uuid), req.user.id, str(d.visited_at, 40), num(d.lat), num(d.lng), num(d.accuracy), consent,
       str(d.title, 30), str(d.first_name, 100), str(d.last_name, 100), num(d.age),
       // Personal identifiers are stored only with consent.
@@ -199,6 +207,7 @@ app.post('/api/visits', need(), upload.array('photos', 10), (req, res) => {
       str(d.flood_from, 10), str(d.flood_to, 10), num(d.relief_case), str(d.damage_desc, 500),
       ['yes', 'no'].includes(d.promptpay) ? d.promptpay : null, JSON.stringify(Array.isArray(d.evidence) ? d.evidence : []),
       JSON.stringify(answers), result.level, JSON.stringify(result), override, str(d.override_reason, 500), str(d.notes, 1000),
+      locationSource,
     ).lastInsertRowid);
 
     const insT = db.prepare('INSERT INTO tickets (visit_id, category, level) VALUES (?, ?, ?)');
@@ -206,7 +215,9 @@ app.post('/api/visits', need(), upload.array('photos', 10), (req, res) => {
     const insP = db.prepare('INSERT INTO photos (visit_id, filename) VALUES (?, ?)');
     for (const f of req.files || []) insP.run(visitId, f.filename);
 
-    if (d.lat != null && d.lng != null) checkin(req.user.id, d.lat, d.lng, d.accuracy);
+    // Safety check-in uses where the volunteer is, which differs from the house when met elsewhere.
+    const here = d.here || (locationSource === 'gps' ? d : null);
+    if (here && num(here.lat) != null && num(here.lng) != null) checkin(req.user.id, here.lat, here.lng, here.accuracy);
     db.exec('COMMIT');
     res.json({ id: visitId, level: override || result.level });
   } catch (e) {
@@ -292,7 +303,7 @@ app.get('/api/tickets', need('responder', 'office', 'admin'), (req, res) => {
   const scope = ticketScope(req.user);
   const active = req.query.status !== 'closed';
   const rows = db.prepare(`
-    SELECT t.*, v.first_name, v.last_name, v.lat, v.lng, v.address, v.phone_enc, v.answers,
+    SELECT t.*, v.first_name, v.last_name, v.lat, v.lng, v.address, v.phone_enc, v.answers, v.location_source,
            u.name AS assignee_name
     FROM tickets t JOIN visits v ON v.id = t.visit_id LEFT JOIN users u ON u.id = t.assignee_id
     WHERE ${scope.where} AND t.status ${active ? "NOT IN ('done','referred')" : "IN ('done','referred')"}
@@ -304,7 +315,7 @@ app.get('/api/tickets', need('responder', 'office', 'admin'), (req, res) => {
       id: t.id, visit_id: t.visit_id, category: t.category, level: t.level, status: t.status,
       assignee_id: t.assignee_id, assignee_name: t.assignee_name, created_at: t.created_at, updated_at: t.updated_at,
       name: `${t.first_name || ''} ${t.last_name || ''}`.trim(), phone: decrypt(t.phone_enc),
-      lat: t.lat, lng: t.lng, address: json(t.address, {}),
+      lat: t.lat, lng: t.lng, address: json(t.address, {}), location_source: t.location_source,
       items: (answers.needs || []).filter((n) => NEEDS.find((x) => x.id === n)?.cat === t.category),
       other_need: t.category === 'general' ? answers.other_need : null,
     };
@@ -366,9 +377,10 @@ app.post('/api/checkout', need(), (req, res) => {
 // ---------------------------------------------------------------- dashboard
 
 app.get('/api/dashboard', need('responder', 'office', 'admin'), (req, res) => {
-  const visits = db.prepare('SELECT id, lat, lng, triage_level, override_level, created_at, address, answers FROM visits ORDER BY id DESC LIMIT 2000').all()
+  const visits = db.prepare('SELECT id, lat, lng, triage_level, override_level, created_at, address, answers, location_source, first_name, last_name FROM visits ORDER BY id DESC LIMIT 2000').all()
     .map((v) => ({
-      id: v.id, lat: v.lat, lng: v.lng, created_at: v.created_at,
+      id: v.id, lat: v.lat, lng: v.lng, created_at: v.created_at, location_source: v.location_source,
+      name: `${v.first_name || ''} ${v.last_name || ''}`.trim(),
       level: v.override_level || v.triage_level, address: json(v.address, {}), needs: json(v.answers, {}).needs || [],
       open: db.prepare("SELECT COUNT(*) AS n FROM tickets WHERE visit_id = ? AND status NOT IN ('done','referred')").get(v.id).n,
     }));

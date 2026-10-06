@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup, Marker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { api, addressLine, timeAgo } from '../lib/api.js';
+import { api, addressLine, timeAgo, placeLink } from '../lib/api.js';
 import { NEEDS, CATEGORIES, LEVEL_LABELS, SPECIALTIES } from '../../../shared/triage.js';
 import { LEVEL_COLOR } from '../components/ui.jsx';
 
@@ -45,6 +45,8 @@ export default function Dashboard() {
     && (!v.level || levels[v.level])
     && (!cat || v.needs.some((n) => NEEDS.find((x) => x.id === n)?.cat === cat))
     && (!openOnly || v.open > 0)), [d, levels, cat, openOnly]);
+
+  const unmapped = useMemo(() => (d?.visits || []).filter((v) => v.lat == null), [d]);
 
   const counts = useMemo(() => {
     const c = { red: 0, yellow: 0, green: 0, total: d?.visits.length || 0 };
@@ -108,6 +110,24 @@ export default function Dashboard() {
           ))}
         </MapContainer>
       </div>
+
+      {unmapped.length > 0 && (
+        <div className="card">
+          <h2 className="font-bold mb-1">ไม่มีพิกัดบนแผนที่ ({unmapped.length})</h2>
+          <p className="text-xs text-neutral-500 mb-2">พบผู้ประสบภัยนอกบ้านและไม่ได้ปักหมุด ใช้ที่อยู่นำทาง</p>
+          <ul className="text-sm divide-y">
+            {unmapped.map((v) => (
+              <li key={v.id} className="py-1.5 flex items-center justify-between gap-2">
+                <a href={`#/visit/${v.id}`} className="flex-1 min-w-0">
+                  <span className="inline-block w-2.5 h-2.5 rounded-full mr-2" style={{ background: LEVEL_COLOR[v.level] || '#888' }} />
+                  {v.name} <span className="text-neutral-500">· {addressLine(v.address)}</span>
+                </a>
+                <a href={placeLink(v)} target="_blank" rel="noreferrer" className="text-golddark underline shrink-0">แผนที่</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="card">
         <h2 className="font-bold mb-2">งานค้างตามด้าน</h2>

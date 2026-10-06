@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { marked } from 'marked';
+import Copyright from '../components/Copyright.jsx';
 // Single source of truth: the same file is shown on GitHub.
 import guide from '../../../docs/USER_GUIDE.md?raw';
 
@@ -40,6 +41,7 @@ export default function Guide({ standalone, section }) {
         <article className="card guide">
           <img src="buu-eng-logo.png" alt="มหาวิทยาลัยบูรพา คณะวิศวกรรมศาสตร์" className="h-10 mb-3" />
           <div dangerouslySetInnerHTML={{ __html: html }} />
+          <Copyright className="mt-6 pt-3 border-t border-neutral-200" />
         </article>
       </div>
     </div>

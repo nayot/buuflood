@@ -81,6 +81,13 @@ CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
 CREATE INDEX IF NOT EXISTS idx_visits_creator ON visits(created_by);
 `);
 
+// Migrations: add columns to existing databases.
+const hasColumn = (table, col) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
+if (!hasColumn('visits', 'location_source')) {
+  // gps = phone position at the house; address = met elsewhere, located by address (optionally a map pin)
+  db.exec("ALTER TABLE visits ADD COLUMN location_source TEXT NOT NULL DEFAULT 'gps'");
+}
+
 export const json = (s, fallback = null) => {
   if (s == null) return fallback;
   try { return JSON.parse(s); } catch { return fallback; }

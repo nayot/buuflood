@@ -33,3 +33,5 @@ User-facing documentation is in README.md; this file covers conventions only.
   and the 📍 label is icon-only on small screens.
 - **Build check:** `npm --prefix client run build` and `docker build -t buuflood .`
 - **Deployment:** eng-ai.buu.ac.th, container on `127.0.0.1:3011`, nginx include `nginx-buuflood.conf`.
+- **Releases:** bump `version` in **both** `package.json` and `client/package.json` (the app shows the client one via
+  `__APP_VERSION__`), add a `CHANGELOG.md` entry, commit, tag `vX.Y.Z`, push with tags, then `gh release create`.

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, addressLine, directionsLink, timeAgo } from '../lib/api.js';
+import { api, addressLine, navLink, canLocate, timeAgo } from '../lib/api.js';
 import { NEEDS, CATEGORIES, TICKET_STATUS } from '../../../shared/triage.js';
 import { LevelBadge, Empty, LEVEL_COLOR } from '../components/ui.jsx';
 
@@ -27,6 +27,7 @@ function TicketCard({ t, me, reload, notify }) {
       <a href={`#/visit/${t.visit_id}`} className="block">
         <div className="font-semibold">{t.name || 'ไม่ระบุชื่อ'}</div>
         <div className="text-sm text-neutral-500">{addressLine(t.address) || '—'}</div>
+        {t.location_source === 'address' && t.lat == null && <div className="text-xs text-golddark">ไม่มีพิกัด: นำทางด้วยที่อยู่ โทรยืนยันก่อนไป</div>}
       </a>
       <ul className="text-sm list-disc pl-5">
         {t.items.map((i) => <li key={i}>{NEEDS.find((n) => n.id === i)?.label}</li>)}
@@ -36,7 +37,7 @@ function TicketCard({ t, me, reload, notify }) {
         {TICKET_STATUS[t.status]}{t.assignee_name ? ` · ${t.assignee_name}` : ''} · แจ้งเมื่อ {timeAgo(t.created_at)}
       </div>
       <div className="grid grid-cols-3 gap-2">
-        {t.lat != null ? <a className="btn-gold text-sm px-2" href={directionsLink(t.lat, t.lng)} target="_blank" rel="noreferrer">🧭 นำทาง</a> : <span />}
+        {canLocate(t) ? <a className="btn-gold text-sm px-2" href={navLink(t)} target="_blank" rel="noreferrer">🧭 นำทาง</a> : <span />}
         {t.phone ? <a className="btn-ghost text-sm px-2" href={`tel:${t.phone}`}>📞 โทร</a> : <span />}
         {t.status === 'open'
           ? <button disabled={busy} onClick={claim} className="btn-primary text-sm px-2">รับเรื่อง</button>

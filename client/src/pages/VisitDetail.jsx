@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { api, addressLine, mapsLink, directionsLink, timeAgo } from '../lib/api.js';
+import { api, addressLine, navLink, placeLink, canLocate, timeAgo } from '../lib/api.js';
 import { NEEDS, CATEGORIES, TICKET_STATUS, RELIEF_CASES, RESIDENCE_TYPES, EVIDENCE } from '../../../shared/triage.js';
 import { LevelBadge, Empty, Section } from '../components/ui.jsx';
 
@@ -47,10 +47,15 @@ export default function VisitDetail({ id, notify }) {
         <Row k="โทรศัพท์">{v.phone && <a className="text-golddark underline" href={`tel:${v.phone}`}>{v.phone}</a>}</Row>
         <Row k="เลขบัตร">{v.national_id}</Row>
         <Row k="อายุ">{v.age && `${v.age} ปี`}</Row>
-        {v.lat != null && (
+        {v.location_source === 'address' && (
+          <div className="text-sm rounded-lg bg-goldpale p-2">
+            พบผู้ประสบภัยนอกบ้าน: ตำแหน่งบ้าน{v.lat != null ? 'จากหมุดที่ปักบนแผนที่' : 'ค้นหาจากที่อยู่ (ไม่มีพิกัด GPS)'}
+          </div>
+        )}
+        {canLocate(v) && (
           <div className="grid grid-cols-2 gap-2 pt-1">
-            <a className="btn-gold" href={directionsLink(v.lat, v.lng)} target="_blank" rel="noreferrer">🧭 นำทาง</a>
-            <a className="btn-ghost" href={mapsLink(v.lat, v.lng)} target="_blank" rel="noreferrer">📍 Google Maps</a>
+            <a className="btn-gold" href={navLink(v)} target="_blank" rel="noreferrer">🧭 นำทาง</a>
+            <a className="btn-ghost" href={placeLink(v)} target="_blank" rel="noreferrer">📍 Google Maps</a>
           </div>
         )}
       </div>

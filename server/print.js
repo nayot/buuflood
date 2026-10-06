@@ -1,6 +1,10 @@
 // Server-rendered, pre-filled แบบคำร้องขอรับความช่วยเหลือผู้ประสบอุทกภัยในช่วงฤดูฝน.
 // Layout follows the ปภ. form (2568 edition). The villager signs the printed copy and submits it at the อปท.
+import fs from 'node:fs';
 import { RELIEF_CASES, RESIDENCE_TYPES, EVIDENCE } from '../shared/triage.js';
+
+// ปภ. logo as on the paper form, embedded so the page needs no extra request.
+const DPM_LOGO = `data:image/png;base64,${fs.readFileSync(new URL('./assets/dpm-logo.png', import.meta.url)).toString('base64')}`;
 
 const THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
   'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
@@ -44,6 +48,8 @@ export function renderForm(v, { photoUrl, year }) {
   body { font-family: 'Sarabun', sans-serif; font-size: 14.5px; line-height: 1.75; color: #000; margin: 0; background: #f2f2f2; }
   .page { width: 210mm; min-height: 297mm; margin: 12px auto; padding: 14mm 15mm; background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,.15); }
   .title { border: 1.5px solid #000; padding: 8px 12px; text-align: center; font-weight: 700; font-size: 17px; }
+  .title.logo { display: flex; align-items: center; gap: 18px; text-align: left; padding: 8px 14px; }
+  .title.logo img { height: 64px; width: auto; }
   .right { text-align: right; }
   h3 { font-size: 14.5px; margin: 10px 0 0; font-weight: 700; }
   .fill { display: inline-block; border-bottom: 1px dotted #000; padding: 0 4px; text-align: center; min-height: 1.4em; vertical-align: bottom; }
@@ -61,7 +67,7 @@ export function renderForm(v, { photoUrl, year }) {
 </style></head><body>
 <div class="bar"><button onclick="window.print()">พิมพ์แบบคำร้อง</button></div>
 <div class="page">
-  <div class="title">แบบคำร้องขอรับความช่วยเหลือผู้ประสบอุทกภัยในช่วงฤดูฝน ปี ${esc(year)}</div>
+  <div class="title logo"><img src="${DPM_LOGO}" alt="ปภ."><span>แบบคำร้องขอรับความช่วยเหลือผู้ประสบอุทกภัยในช่วงฤดูฝน ปี ${esc(year)}</span></div>
   <p class="right">วันที่${fill(today.d, 3)}เดือน${fill(today.m, 7)}พ.ศ.${fill(today.y, 5)}</p>
 
   <h3>ผู้ประสบอุทกภัย</h3>

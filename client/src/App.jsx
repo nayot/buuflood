@@ -11,6 +11,7 @@ import Tickets from './pages/Tickets.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Users from './pages/Users.jsx';
 import Guide from './pages/Guide.jsx';
+import Copyright from './components/Copyright.jsx';
 
 // Tiny hash router: #/path?query — works under any sub-path without server rewrites.
 function useHash() {
@@ -133,6 +134,7 @@ export default function App() {
               <div className="px-2 pb-2 text-xs text-neutral-500">{me.email}</div>
               <img src="buu-eng-logo.png" alt="มหาวิทยาลัยบูรพา คณะวิศวกรรมศาสตร์" className="h-8 mx-2 mb-2" />
               <button onClick={logout} className="w-full text-left p-2 rounded-lg hover:bg-neutral-100">ออกจากระบบ</button>
+              <Copyright className="px-2 pt-2 border-t border-neutral-200" />
             </div>
           </details>
         </div>

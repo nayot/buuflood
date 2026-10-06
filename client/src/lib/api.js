@@ -16,6 +16,33 @@ export async function api(path, { method = 'GET', body } = {}) {
 export const mapsLink = (lat, lng) => `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
 export const directionsLink = (lat, lng) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 
+// Links for a visit or ticket: use the map position when there is one, otherwise let Google Maps find the address.
+const hasPos = (v) => v && v.lat != null && v.lng != null;
+const addressQuery = (a = {}) => [a.house_no, a.moo && `หมู่ ${a.moo}`, a.village, a.soi && `ซอย ${a.soi}`, a.road && `ถนน ${a.road}`,
+  a.tambon && `ตำบล ${a.tambon}`, a.amphoe && `อำเภอ ${a.amphoe}`, a.province && `จังหวัด ${a.province}`].filter(Boolean).join(' ');
+export const placeLink = (v) => (hasPos(v) ? mapsLink(v.lat, v.lng)
+  : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addressQuery(v?.address))}`);
+export const navLink = (v) => (hasPos(v) ? directionsLink(v.lat, v.lng)
+  : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addressQuery(v?.address))}`);
+export const canLocate = (v) => hasPos(v) || !!(v?.address?.tambon || v?.address?.amphoe);
+
+/** Approximate position of an address (OpenStreetMap Nominatim). Returns null when not found or offline. */
+export async function geocode(a = {}) {
+  const tries = [
+    [a.village, a.tambon && `ตำบล${a.tambon}`, a.amphoe && `อำเภอ${a.amphoe}`, a.province && `จังหวัด${a.province}`],
+    [a.tambon && `ตำบล${a.tambon}`, a.amphoe && `อำเภอ${a.amphoe}`, a.province && `จังหวัด${a.province}`],
+    [a.amphoe && `อำเภอ${a.amphoe}`, a.province && `จังหวัด${a.province}`],
+  ].map((t) => t.filter(Boolean).join(' ')).filter(Boolean);
+  for (const q of [...new Set(tries)]) {
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=th&accept-language=th&q=${encodeURIComponent(q)}`);
+      const [hit] = await r.json();
+      if (hit) return { lat: +(+hit.lat).toFixed(6), lng: +(+hit.lon).toFixed(6) };
+    } catch { return null; }
+  }
+  return null;
+}
+
 export function addressLine(a = {}) {
   return [a.house_no && `เลขที่ ${a.house_no}`, a.moo && `หมู่ ${a.moo}`, a.village, a.soi && `ซ.${a.soi}`, a.road && `ถ.${a.road}`,
     a.tambon && `ต.${a.tambon}`, a.amphoe && `อ.${a.amphoe}`, a.province && `จ.${a.province}`].filter(Boolean).join(' ');
