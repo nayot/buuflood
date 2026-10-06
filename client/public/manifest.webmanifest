@@ -1,0 +1,10 @@
+{
+  "name": "บูรพาร่วมฟื้นฟูหลังน้ำท่วม",
+  "short_name": "BUU Flood",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#3F3F3F",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

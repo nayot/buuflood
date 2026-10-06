@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+@theme {
+  --color-gold: #FFCE00;
+  --color-golddark: #A88400;
+  --color-goldpale: #FFF6CC;
+  --color-ink: #3F3F3F;
+  --color-lvgreen: #2E8B57;
+  --color-lvyellow: #E0A800;
+  --color-lvred: #C0392B;
+  --font-sans: 'Sarabun', system-ui, sans-serif;
+}
+
+html { -webkit-text-size-adjust: 100%; }
+body { @apply bg-neutral-100 text-ink; }
+input, select, textarea { @apply w-full rounded-lg border border-neutral-300 bg-white px-3 py-2.5 text-base outline-none focus:border-golddark; }
+input[type="checkbox"], input[type="radio"] { @apply w-5 h-5 p-0 accent-golddark shrink-0; }
+.btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 font-semibold active:scale-[.98] disabled:opacity-50 bg-ink text-white; }
+.btn-gold { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 font-semibold active:scale-[.98] disabled:opacity-50 bg-gold text-ink; }
+.btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 font-semibold active:scale-[.98] disabled:opacity-50 bg-white border border-neutral-300; }
+.card { @apply rounded-2xl bg-white p-4 shadow-sm; }
+.label { @apply block text-sm font-semibold mb-1; }
+
+/* In-app user guide (rendered from docs/USER_GUIDE.md) */
+.guide { @apply leading-relaxed; }
+.guide h1 { @apply text-2xl font-bold mb-2; }
+.guide h2 { @apply text-xl font-bold mt-8 mb-2 pt-2 border-t-4 border-gold scroll-mt-20; }
+.guide h3 { @apply text-lg font-bold mt-5 mb-1; }
+.guide p { @apply my-2; }
+.guide ul, .guide ol { @apply my-2 pl-6 space-y-1; }
+.guide ul { @apply list-disc; }
+.guide ol { @apply list-decimal; }
+.guide li > ul { @apply mt-1; }
+.guide a { @apply text-golddark underline break-all; }
+.guide hr { @apply hidden; }
+.guide blockquote { @apply my-3 rounded-lg border-l-4 border-golddark bg-goldpale px-3 py-2; }
+.guide table { @apply my-3 w-full text-sm border-collapse block overflow-x-auto; }
+.guide th, .guide td { @apply border border-neutral-200 px-2 py-1.5 text-left align-top; }
+.guide th { @apply bg-neutral-100; }
+.guide code { @apply rounded bg-neutral-100 px-1; }

@@ -1,0 +1,86 @@
+import { useEffect, useState } from 'react';
+import { api, addressLine, directionsLink, timeAgo } from '../lib/api.js';
+import { NEEDS, CATEGORIES, TICKET_STATUS } from '../../../shared/triage.js';
+import { LevelBadge, Empty, LEVEL_COLOR } from '../components/ui.jsx';
+
+function TicketCard({ t, me, reload, notify }) {
+  const [open, setOpen] = useState(false);
+  const [status, setStatus] = useState(t.status === 'open' ? 'in_progress' : t.status);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const claim = async () => { setBusy(true); try { await api(`api/tickets/${t.id}/claim`, { method: 'POST' }); notify('รับเรื่องแล้ว'); reload(); } catch { notify('ไม่สำเร็จ'); } setBusy(false); };
+  const update = async () => {
+    setBusy(true);
+    try { await api(`api/tickets/${t.id}/update`, { method: 'POST', body: { status, note } }); notify('อัปเดตแล้ว'); setOpen(false); setNote(''); reload(); }
+    catch { notify('ไม่สำเร็จ'); }
+    setBusy(false);
+  };
+  const mine = t.assignee_id === me.id;
+
+  return (
+    <div className="card space-y-2 border-l-8" style={{ borderLeftColor: LEVEL_COLOR[t.level] }}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="font-bold">{CATEGORIES[t.category]?.icon} {CATEGORIES[t.category]?.label}</div>
+        <LevelBadge level={t.level} />
+      </div>
+      <a href={`#/visit/${t.visit_id}`} className="block">
+        <div className="font-semibold">{t.name || 'ไม่ระบุชื่อ'}</div>
+        <div className="text-sm text-neutral-500">{addressLine(t.address) || '—'}</div>
+      </a>
+      <ul className="text-sm list-disc pl-5">
+        {t.items.map((i) => <li key={i}>{NEEDS.find((n) => n.id === i)?.label}</li>)}
+        {t.other_need && <li>{t.other_need}</li>}
+      </ul>
+      <div className="text-xs text-neutral-500">
+        {TICKET_STATUS[t.status]}{t.assignee_name ? ` · ${t.assignee_name}` : ''} · แจ้งเมื่อ {timeAgo(t.created_at)}
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {t.lat != null ? <a className="btn-gold text-sm px-2" href={directionsLink(t.lat, t.lng)} target="_blank" rel="noreferrer">🧭 นำทาง</a> : <span />}
+        {t.phone ? <a className="btn-ghost text-sm px-2" href={`tel:${t.phone}`}>📞 โทร</a> : <span />}
+        {t.status === 'open'
+          ? <button disabled={busy} onClick={claim} className="btn-primary text-sm px-2">รับเรื่อง</button>
+          : <button onClick={() => setOpen(!open)} className="btn-primary text-sm px-2">{mine ? 'อัปเดต' : 'บันทึก'}</button>}
+      </div>
+      {open && (
+        <div className="space-y-2 pt-2 border-t">
+          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+            {Object.entries(TICKET_STATUS).filter(([k]) => k !== 'open').map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+          <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="บันทึกการให้ความช่วยเหลือ เช่น ตรวจแล้ว ตัดไฟจุดที่รั่ว แนะนำให้…" />
+          <button disabled={busy} onClick={update} className="btn-primary w-full">บันทึก</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function Tickets({ me, notify, onChange }) {
+  const [rows, setRows] = useState(null);
+  const [closed, setClosed] = useState(false);
+  const [onlyMine, setOnlyMine] = useState(false);
+
+  const load = () => api(`api/tickets${closed ? '?status=closed' : ''}`).then((r) => {
+    setRows(r);
+    if (!closed) onChange?.(r.filter((t) => t.status === 'open').length);
+  }).catch(() => setRows([]));
+  useEffect(() => { load(); const t = setInterval(load, 45000); return () => clearInterval(t); }, [closed]);
+
+  const shown = (rows || []).filter((t) => !onlyMine || t.assignee_id === me.id);
+
+  return (
+    <div className="space-y-3">
+      <h1 className="text-xl font-bold px-1">งานช่วยเหลือ</h1>
+      <div className="flex gap-2 text-sm">
+        <button onClick={() => setClosed(false)} className={`rounded-full px-3 py-1.5 ${!closed ? 'bg-ink text-white' : 'bg-white'}`}>เปิดอยู่</button>
+        <button onClick={() => setClosed(true)} className={`rounded-full px-3 py-1.5 ${closed ? 'bg-ink text-white' : 'bg-white'}`}>ปิดแล้ว</button>
+        <label className="ml-auto flex items-center gap-2"><input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} />ของฉัน</label>
+      </div>
+      {me.role === 'responder' && !me.specialty && (
+        <div className="card bg-goldpale text-sm">ยังไม่ได้กำหนดความเชี่ยวชาญ จึงเห็นเฉพาะงานระดับแดง ติดต่อผู้ดูแลระบบ</div>
+      )}
+      {rows === null ? <Empty>กำลังโหลด…</Empty> : shown.length === 0 ? <Empty>ไม่มีงาน</Empty>
+        : shown.map((t) => <TicketCard key={t.id} t={t} me={me} reload={load} notify={notify} />)}
+    </div>
+  );
+}

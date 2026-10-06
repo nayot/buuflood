@@ -1,0 +1,18 @@
+services:
+  app:
+    build: .
+    image: buuflood:latest
+    container_name: buuflood
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      TZ: Asia/Bangkok        # dates printed on the relief form
+    ports:
+      # Loopback only: reachable through the host's nginx reverse proxy.
+      - "127.0.0.1:3011:3000"
+    volumes:
+      - data:/app/data          # SQLite database + uploaded photos
+
+volumes:
+  data:

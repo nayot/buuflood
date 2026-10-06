@@ -1,0 +1,30 @@
+{
+  "name": "buuflood",
+  "version": "0.1.0",
+  "description": "BUU Flood Recovery — household triage web app for home-visit volunteers (Burapha University)",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "server/server.js",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node server/server.js",
+    "dev:server": "node --watch-path=server --watch-path=shared server/server.js",
+    "dev:client": "npm --prefix client run dev",
+    "dev": "concurrently -n server,client -c cyan,magenta \"npm run dev:server\" \"npm run dev:client\"",
+    "build": "npm --prefix client run build",
+    "purge": "node scripts/purge.js"
+  },
+  "dependencies": {
+    "cookie-session": "^2.1.1",
+    "dotenv": "^18.0.5",
+    "express": "^5.2.1",
+    "google-auth-library": "^11.1.0",
+    "multer": "^2.4.0"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  }
+}
