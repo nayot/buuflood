@@ -18,6 +18,6 @@ export default defineConfig({
     fs: { allow: ['..'] },
     // Phone testing over HTTPS (GPS and camera need it): cloudflared tunnel --url http://localhost:5173
     allowedHosts: ['.trycloudflare.com'],
-    proxy: { '/api': backend, '/auth': backend, '/print': backend },
+    proxy: { '/api': backend, '/auth': backend },
   },
 });

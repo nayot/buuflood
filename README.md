@@ -2,8 +2,9 @@
 
 **บูรพาร่วมฟื้นฟูหลังน้ำท่วม** · A mobile web app for Burapha University volunteers who visit flood-affected
 households in the recovery phase. Volunteers record each household's needs; the app grades them
-red / yellow / green, opens tickets for the right experts, and pre-fills the government relief form
-(แบบคำร้องขอรับความช่วยเหลือผู้ประสบอุทกภัยในช่วงฤดูฝน) for the villager to sign.
+red / yellow / green, screens for depression and suicide risk with the Department of Mental Health's 2Q/9Q/8Q,
+opens tickets for the right experts, and queues flood-damaged items (motorbikes, fridges, washing machines…)
+for the Fixing Centre (ศูนย์ซ่อม).
 
 The UI is in Thai. It works on any phone, tablet or laptop browser.
 
@@ -12,41 +13,48 @@ The UI is in Thai. It works on any phone, tablet or laptop browser.
 ## How it works
 
 ```
-Volunteer visits a house ──► needs checklist + GPS + photos ──► triage (red / yellow / green)
+Volunteer visits a house ──► needs + 2Q/9Q/8Q + GPS + photos ──► triage (red / yellow / green)
                                                                     │
      ┌──────────────────────────────────────────────────────────────┼────────────────────────┐
      ▼                                                              ▼                        ▼
  🟢 green: come to the service station          🟡/🔴 tickets for responders     🍚 food, water, clothes
  (อบต. / รพ.สต.)                                  (ไฟฟ้า, โครงสร้าง, สุขภาพกาย, สุขภาพใจ)   → office ticket
                                                   claim → navigate → update → close
- Office / อบต.: no-login print link (QR) → pre-filled relief form → villager signs and submits
+ 🔴 mental health: call buttons (1669, 1323, local numbers) shown at once
+ 🔧 damaged items + photos → queue number per type (MC-001, FR-001…) → Fixing Centre → report by type
 ```
 
 | Role | Can do |
 |---|---|
 | `volunteer` (default on first login) | Record visits, see own visits, share location |
 | `responder` + one or more specialties | Tickets in their specialties only; claim, update, close, navigate |
-| `office` | All visits, supply and other tickets, every red ticket, print links, dashboard |
+| `fixer` | Fixing Centre: walk-in registration, item status, report and CSV |
+| `office` | All visits, supply and other tickets, every red ticket, dashboard, Fixing Centre |
 | `admin` | Everything, plus assigning roles |
 
 - **Sign-in:** Google, limited to `@go.buu.ac.th` and `@eng.buu.ac.th` (`ALLOWED_DOMAINS`).
-- **Triage rules:** `shared/triage.js` — one file shared by the phone (live preview) and the server.
-  Volunteers can override the level with a reason.
+- **Triage rules:** `shared/triage.js` — shared by the phone (live preview) and the server.
+  Volunteers can override the level with a reason. The 2Q/9Q/8Q screening and its red/yellow/green rules are in
+  `shared/mental.js`; it runs whenever a สุขภาพใจ need is ticked, and a red result shows tap-to-call numbers
+  (`EMERGENCY_CONTACTS` in `.env` adds local ones).
 - **Weak signal:** visits are saved on the phone first (IndexedDB) and uploaded when there is signal.
   The server ignores a visit it already has, so retries never duplicate.
 - **Locations:** shared while the app is open on screen (every 2 minutes, plus a 📍 button and every saved visit).
   Browsers, especially on iPhone, do not allow background location, so the map shows each person's
   *last* position and how long ago it was.
-- **Relief form:** `/print/<token>` renders the form without login. The link is HMAC-signed and expires
-  after `PRINT_LINK_DAYS` (14). Share it as a link or QR code with the อบต.
+- **Fixing Centre:** items come from home visits (each with at least one photo) or are registered as walk-ins at
+  the centre. The queue number is the type prefix plus a running number per type (`shared/repairs.js`), issued by
+  the server, so a visit saved offline gets its numbers when it uploads. The report groups items by type in queue
+  order with the owner's contacts; print it or download CSV.
 
 ## Personal data (PDPA)
 
-- Personal identifiers (national ID, phone) are stored **only if the villager consents**, and are
-  encrypted at rest (AES-256-GCM, key `DATA_KEY`).
-- Responders see the phone number (to call ahead) but only a masked ID. Full details are visible to the
-  volunteer who collected them, office staff and admins.
-- Delete household data (visits, tickets, photos, check-ins; user accounts are kept). Back up first:
+- Since 2.0 the app collects only the name, address and a contact (phone, LINE or email; at least one, or a
+  "no contact" tick). Contacts are encrypted at rest (AES-256-GCM, key `DATA_KEY`). National IDs and the relief-form
+  fields of 1.x visits stay in the database but are no longer shown; purge them when the project ends.
+- The 2Q/9Q/8Q answers are health data: only admins, the volunteer who asked and mental-health responders see them.
+  Others see the level and the totals.
+- Delete household data (visits, tickets, photos, repair items, check-ins; user accounts are kept). Back up first:
   ```bash
   docker compose cp app:/app/data ./backup-$(date +%F)
   docker compose exec app node scripts/purge.js --all --yes          # everything, e.g. after testing

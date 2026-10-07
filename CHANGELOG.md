@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.0.0 — 2026-10-08
+
+Major release. **Deploy only when no phone shows "รอส่ง"**: visits queued by 1.x have no contact field and would be
+rejected.
+
+- **Relief form removed.** No more pre-filled แบบคำร้อง, print links or QR codes (`/print/*`, `server/print.js`,
+  `PRINT_LINK_DAYS`, `FORM_YEAR`). The visit no longer asks for title, age, national ID, residence type or relief-form
+  details. Those fields of 1.x visits stay in the database but are not shown.
+- **Contact instead of ID:** first and last name plus at least one of phone, LINE ID or email (all encrypted), or a
+  "ไม่มีช่องทางติดต่อ" tick with the alternative in the notes.
+- **Mental-health screening (2Q 9Q 8Q, กรมสุขภาพจิต):** opens when any สุขภาพใจ need is ticked and must be completed.
+  2Q positive → 9Q; 9Q ≥ 7 or item 9 > 0 → 8Q. Red: 8Q ≥ 9, or cannot control / plan / prepared / attempted, or
+  9Q ≥ 19; yellow: 9Q 7–18 or 8Q 1–8; green otherwise. Red shows tap-to-call buttons for 1669, 1323 and local
+  numbers (`EMERGENCY_CONTACTS`); yellow goes to the mental-health team; green advises seeing health staff.
+  The answers are visible only to admins, the volunteer who asked and mental-health responders.
+- **Fixing Centre (ศูนย์ซ่อม):** list damaged items during a visit (type, brand, problem, 1–4 photos each) or register
+  walk-ins at the centre. Each item gets a queue number per type (MC-001, FR-001…). New tab and new `fixer` role
+  (ช่างซ่อม): filters, search, status history, and a report by type in queue order with the owner's contacts,
+  printable or as CSV. Volunteers see the queue numbers in their visits.
+- Tickets show LINE and email, and mental-health tickets show the screening result.
+- `purge.js` also deletes repair items and their photos.
+- User guide rewritten for the new form, screening and Fixing Centre.
+
 ## 1.0.3 — 2026-10-07
 
 - **Map shows households met away from home.** When a visit is recorded by address with no map pin, the server

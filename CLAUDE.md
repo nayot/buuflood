@@ -5,9 +5,10 @@ User-facing documentation is in README.md; this file covers conventions only.
 
 - **Layout:** `server/` (Express 5, ESM), `client/` (React 19 + Vite + Tailwind 4), `shared/triage.js`
   (the questions, triage rules, labels and form constants, imported by both sides).
-- **Change triage rules or questions only in `shared/triage.js`.** The server recomputes the level; the client
-  only previews it.
-- **URLs are relative everywhere** (`api/...`, `auth/...`, `print/...`). The client uses `base: './'` and hash routing,
+- **Change triage rules or questions only in `shared/`:** `triage.js` (needs and levels), `mental.js` (2Q/9Q/8Q
+  wording and scoring, agreed with Nayot 8 Oct 2026), `repairs.js` (item types and prefixes), `contact.js` (contact
+  rule). The server recomputes everything; the client only previews and must validate the same way.
+- **URLs are relative everywhere** (`api/...`, `auth/...`). The client uses `base: './'` and hash routing,
   so the same build runs at `/` and behind nginx at `/buuflood/` (nginx strips the prefix). Never write a
   leading `/` in a client URL.
 - **Storage:** `node:sqlite` (`server/db.js`, schema is `CREATE TABLE IF NOT EXISTS`; add columns with
@@ -23,13 +24,18 @@ User-facing documentation is in README.md; this file covers conventions only.
   Google Maps address search. The safety check-in uses the volunteer's own position (`here`), not the house.
   Address-only visits get `approx_lat`/`approx_lng`/`approx_level` from `server/geocode.js` (Nominatim, 1 req/s, no house
   number or name sent). They are for the dashboard map only; never use them for navigation.
-- **Required on save:** the villager's first and last name; in `address` mode also `tambon`, `amphoe`, `province` and
-  `house_no` or `moo`. The server returns 400 for missing ones, so validate the same fields in the client.
-- **Personal data:** the national ID and phone are encrypted with `encrypt()`/`decrypt()` (`server/crypto.js`) and stored only
-  with consent. Responders get a masked ID. Never log them, never add real data or `.env` to the repo.
-- **The print form** (`server/print.js`) mirrors the ปภ. paper form แบบคำร้องขอรับความช่วยเหลือผู้ประสบอุทกภัยในช่วงฤดูฝน
-  (2568 edition, the reference image is in the FloodRecovery project docs). The ปภ. logo (`server/assets/dpm-logo.png`,
-  low resolution, cropped from a screenshot) is embedded as a data URI. Check the layout against the current year's form.
+- **Required on save:** the villager's first and last name; a contact or `no_contact` (`contactError()`); a complete
+  2Q/9Q/8Q when a mental need is ticked; every repair item with a type and 1–4 photos; in `address` mode also
+  `tambon`, `amphoe`, `province` and `house_no` or `moo`. The server returns 400 for missing ones, so validate the
+  same fields in the client. A rule change that rejects what older phones queue strands their outbox: deploy such
+  changes only when no phone shows "รอส่ง".
+- **Personal data (v2):** name, address and contacts only. Phone, LINE and email are encrypted with
+  `encrypt()`/`decrypt()` (`server/crypto.js`). The 1.x columns (national ID, title, age, residence, relief-form fields,
+  consent) remain in old rows but are never read. Mental screening answers go only to admins, the creator and
+  `mental` responders (`seesMentalDetail()` in `server.js`). Never log personal data, never add real data or `.env`.
+- **Fixing Centre:** `server/repairs.js`. Queue number = `type`-`seq`, allocated inside the visit's transaction;
+  item photos are multipart files named `item_<item uuid>` (multer `.any()`). Walk-ins (`POST /api/repairs`) are
+  online-only and deduplicated by `<request uuid>:<index>`. Roles `fixer`, `office`, `admin` see the tab.
 - **Local testing:** `.env` with `DEV_AUTH=1`, then `/auth/dev?email=x@eng.buu.ac.th&role=responder&specialty=electrical`.
   DEV_AUTH is ignored when `NODE_ENV=production`. The test login redirects to `PUBLIC_URL`, so the session cookie lands
   on that host.
@@ -45,6 +51,8 @@ User-facing documentation is in README.md; this file covers conventions only.
   never a 500.
 - **Header on phones:** it only has room for the title and the three buttons. The logo is shown from `sm:` up,
   and the 📍 label is icon-only on small screens. The version and copyright line is `components/Copyright.jsx`.
+- **Emergency numbers:** 1669 and 1323 are in `shared/mental.js`; local ones come from `EMERGENCY_CONTACTS` via
+  `/api/me` and are cached on the phone for offline use.
 - **Build check:** `npm --prefix client run build` and `docker build -t buuflood .`
 - **Deployment:** eng-ai.buu.ac.th, container on `127.0.0.1:3011`, nginx include `nginx-buuflood.conf`.
 - **Releases:** bump `version` in **both** `package.json` and `client/package.json` (the app shows the client one via

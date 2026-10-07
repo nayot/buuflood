@@ -11,6 +11,9 @@ import Tickets from './pages/Tickets.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Users from './pages/Users.jsx';
 import Guide from './pages/Guide.jsx';
+import Repairs from './pages/Repairs.jsx';
+import RepairDetail from './pages/RepairDetail.jsx';
+import { rememberLocalContacts } from './components/Emergency.jsx';
 import Copyright from './components/Copyright.jsx';
 
 // Tiny hash router: #/path?query — works under any sub-path without server rewrites.
@@ -25,12 +28,13 @@ function useHash() {
   return { path: p || '/', query: new URLSearchParams(q || '') };
 }
 
-const ROLE_LABEL = { volunteer: 'อาสาสมัคร', responder: 'ผู้เชี่ยวชาญ', office: 'เจ้าหน้าที่', admin: 'ผู้ดูแลระบบ' };
+const ROLE_LABEL = { volunteer: 'อาสาสมัคร', responder: 'ผู้เชี่ยวชาญ', fixer: 'ช่างซ่อม', office: 'เจ้าหน้าที่', admin: 'ผู้ดูแลระบบ' };
 
 function tabsFor(role) {
   const t = [{ to: '/new', label: 'เยี่ยมบ้าน', icon: '➕' }, { to: '/visits', label: 'บันทึก', icon: '📋' }];
   if (['responder', 'office', 'admin'].includes(role)) t.push({ to: '/tickets', label: 'งาน', icon: '🛠️', badge: true });
   if (['responder', 'office', 'admin'].includes(role)) t.push({ to: '/map', label: 'แผนที่', icon: '🗺️' });
+  if (['fixer', 'office', 'admin'].includes(role)) t.push({ to: '/repairs', label: 'ศูนย์ซ่อม', icon: '🔧' });
   if (role === 'admin') t.push({ to: '/users', label: 'ผู้ใช้', icon: '👥' });
   return t;
 }
@@ -71,7 +75,7 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const loc = useLocationSharing(me);
 
-  const refreshMe = () => api('api/me').then((r) => { setMe(r.user); setDevAuth(!!r.devAuth); }).catch(() => setMe(null));
+  const refreshMe = () => api('api/me').then((r) => { setMe(r.user); setDevAuth(!!r.devAuth); rememberLocalContacts(r.emergency); }).catch(() => setMe(null));
   useEffect(() => { refreshMe(); }, []);
   useEffect(() => onOutboxChange(setOutbox), []);
   useEffect(() => { if (me) flush(); }, [me]);
@@ -92,7 +96,8 @@ export default function App() {
   if (!me) return <Login error={query.get('error')} devAuth={devAuth} />;
 
   const tabs = tabsFor(me.role);
-  const active = path === '/' ? (me.role === 'volunteer' ? '/new' : tabs.find((t) => t.to === '/tickets') ? '/tickets' : '/new') : path;
+  const home = me.role === 'fixer' ? '/repairs' : tabs.find((t) => t.to === '/tickets') ? '/tickets' : '/new';
+  const active = path === '/' ? home : path;
 
   let page;
   if (active === '/new') page = <NewVisit me={me} notify={notify} />;
@@ -100,6 +105,8 @@ export default function App() {
   else if (active.startsWith('/visit/')) page = <VisitDetail id={active.split('/')[2]} me={me} notify={notify} />;
   else if (active === '/tickets') page = <Tickets me={me} notify={notify} onChange={(n) => setOpenTickets(n)} />;
   else if (active === '/map') page = <Dashboard me={me} />;
+  else if (active === '/repairs' && ['fixer', 'office', 'admin'].includes(me.role)) page = <Repairs notify={notify} view={query.get('view') || 'list'} />;
+  else if (active.startsWith('/repair/')) page = <RepairDetail id={active.split('/')[2]} me={me} notify={notify} />;
   else if (active === '/users' && me.role === 'admin') page = <Users me={me} notify={notify} />;
   else if (active === '/guide') page = <Guide section={query.get('s')} />;
   else page = <NewVisit me={me} notify={notify} />;
@@ -109,7 +116,7 @@ export default function App() {
 
   return (
     <div className="min-h-dvh pb-24">
-      <header className="sticky top-0 z-[1000] bg-ink text-white">
+      <header className="sticky top-0 z-[1000] bg-ink text-white print:hidden">
         <div className="mx-auto max-w-3xl px-4 py-2 flex items-center gap-3">
           <img src="buu-eng-logo.png" alt="BUU ENG" className="hidden sm:block h-9 rounded-md bg-white px-1.5 py-1 shrink-0" />
           <div className="flex-1 min-w-0">
@@ -142,7 +149,7 @@ export default function App() {
 
       <main className="mx-auto max-w-3xl p-3 sm:p-4">{page}</main>
 
-      <nav className="fixed bottom-0 inset-x-0 z-[1000] bg-white border-t border-neutral-200 pb-[env(safe-area-inset-bottom)]">
+      <nav className="fixed bottom-0 inset-x-0 z-[1000] bg-white border-t border-neutral-200 pb-[env(safe-area-inset-bottom)] print:hidden">
         <div className="mx-auto max-w-3xl grid" style={{ gridTemplateColumns: `repeat(${tabs.length}, 1fr)` }}>
           {tabs.map((t) => (
             <a key={t.to} href={`#${t.to}`} className={`relative flex flex-col items-center py-2 text-xs ${active === t.to ? 'text-ink font-bold' : 'text-neutral-500'}`}>

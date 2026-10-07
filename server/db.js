@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT UNIQUE NOT NULL,
   name TEXT,
   picture TEXT,
-  role TEXT NOT NULL DEFAULT 'volunteer',      -- volunteer | responder | office | admin
+  role TEXT NOT NULL DEFAULT 'volunteer',      -- volunteer | responder | fixer | office | admin
   specialty TEXT,                               -- responders: comma-separated electrical,structural,physical,mental
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   last_login TEXT
@@ -95,6 +95,52 @@ if (!hasColumn('visits', 'approx_lat')) {
   db.exec('ALTER TABLE visits ADD COLUMN approx_level TEXT');
   db.exec('ALTER TABLE visits ADD COLUMN geocoded_at TEXT');
 }
+
+if (!hasColumn('visits', 'line_enc')) {
+  // v2: contact by phone, LINE or email (any one), all encrypted. The v1 relief-form columns (title, age,
+  // national_id_enc, residence_*, flood_*, relief_case, damage_desc, promptpay, evidence, consent) are kept but unused.
+  db.exec('ALTER TABLE visits ADD COLUMN line_enc TEXT');
+  db.exec('ALTER TABLE visits ADD COLUMN email_enc TEXT');
+  db.exec('ALTER TABLE visits ADD COLUMN no_contact INTEGER NOT NULL DEFAULT 0');
+}
+
+// Fixing Centre. An item comes from a home visit (visit_id) or is registered as a walk-in at the centre (visit_id
+// null); the owner's name and contacts are copied onto the item either way, so the report needs no join.
+db.exec(`
+CREATE TABLE IF NOT EXISTS repair_items (
+  id INTEGER PRIMARY KEY,
+  uuid TEXT UNIQUE NOT NULL,
+  type TEXT NOT NULL,                           -- REPAIR_TYPES key (MC, FR, ...)
+  seq INTEGER NOT NULL,                         -- running number within the type: queue no. = type-seq
+  visit_id INTEGER REFERENCES visits(id) ON DELETE CASCADE,
+  created_by INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  owner_name TEXT NOT NULL,
+  phone_enc TEXT, line_enc TEXT, email_enc TEXT,
+  area TEXT,                                    -- JSON: moo, village, tambon, amphoe, province
+  type_other TEXT, brand TEXT, problem TEXT,
+  status TEXT NOT NULL DEFAULT 'registered',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (type, seq)
+);
+
+CREATE TABLE IF NOT EXISTS repair_photos (
+  id INTEGER PRIMARY KEY,
+  item_id INTEGER NOT NULL REFERENCES repair_items(id) ON DELETE CASCADE,
+  filename TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS repair_updates (
+  id INTEGER PRIMARY KEY,
+  item_id INTEGER NOT NULL REFERENCES repair_items(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  status TEXT, note TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_repair_visit ON repair_items(visit_id);
+`);
 
 export const json = (s, fallback = null) => {
   if (s == null) return fallback;

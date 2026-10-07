@@ -3,7 +3,7 @@ import { api, timeAgo } from '../lib/api.js';
 import { SPECIALTIES, parseSpecialties } from '../../../shared/triage.js';
 import { Empty, Check } from '../components/ui.jsx';
 
-const ROLES = { volunteer: 'อาสาสมัคร', responder: 'ผู้เชี่ยวชาญ', office: 'เจ้าหน้าที่ (อบต./ศูนย์ช่วยเหลือ)', admin: 'ผู้ดูแลระบบ' };
+const ROLES = { volunteer: 'อาสาสมัคร', responder: 'ผู้เชี่ยวชาญ', fixer: 'ช่างซ่อม (ศูนย์ซ่อม)', office: 'เจ้าหน้าที่ (อบต./ศูนย์ช่วยเหลือ)', admin: 'ผู้ดูแลระบบ' };
 
 export default function Users({ me, notify }) {
   const [rows, setRows] = useState(null);

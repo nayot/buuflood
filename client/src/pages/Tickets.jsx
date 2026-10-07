@@ -33,6 +33,18 @@ function TicketCard({ t, me, reload, notify }) {
         {t.items.map((i) => <li key={i}>{NEEDS.find((n) => n.id === i)?.label}</li>)}
         {t.other_need && <li>{t.other_need}</li>}
       </ul>
+      {t.mental?.summary && (
+        <div className="text-sm rounded-lg bg-neutral-100 p-2">
+          <b>2Q 9Q 8Q:</b> {t.mental.summary}
+          {t.mental.flags.length > 0 && <div className="text-lvred font-semibold">{t.mental.flags.join(' · ')}</div>}
+        </div>
+      )}
+      {(t.line || t.email) && (
+        <div className="text-sm flex flex-wrap gap-x-4">
+          {t.line && <a className="text-golddark underline" href={`https://line.me/R/ti/p/~${encodeURIComponent(t.line)}`} target="_blank" rel="noreferrer">LINE: {t.line}</a>}
+          {t.email && <a className="text-golddark underline" href={`mailto:${t.email}`}>{t.email}</a>}
+        </div>
+      )}
       <div className="text-xs text-neutral-500">
         {TICKET_STATUS[t.status]}{t.assignee_name ? ` · ${t.assignee_name}` : ''} · แจ้งเมื่อ {timeAgo(t.created_at)}
       </div>

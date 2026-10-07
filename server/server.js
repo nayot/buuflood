@@ -10,10 +10,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { db, json, UPLOAD_DIR } from './db.js';
-import { encrypt, decrypt, maskId, makePrintToken, readPrintToken } from './crypto.js';
-import { renderForm, renderExpired } from './print.js';
+import { encrypt, decrypt } from './crypto.js';
 import { geocodePending } from './geocode.js';
-import { triage, ticketsFor, CATEGORIES, LEVELS, TICKET_STATUS, NEEDS, parseSpecialties } from '../shared/triage.js';
+import { mountRepairs, insertItems, itemsError, itemsOfVisit, removeFiles } from './repairs.js';
+import { triage, ticketsFor, needsMentalScreening, CATEGORIES, LEVELS, TICKET_STATUS, NEEDS, parseSpecialties } from '../shared/triage.js';
+import { cleanMental } from '../shared/mental.js';
+import { contactError, cleanPhone, cleanLine, cleanEmail } from '../shared/contact.js';
+import { ITEMS_MAX, ITEM_PHOTOS_MAX, queueNo } from '../shared/repairs.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROD = process.env.NODE_ENV === 'production';
@@ -23,7 +26,9 @@ const BASE_PATH = new URL(PUBLIC_URL).pathname.replace(/\/$/, '') || '';
 const DOMAINS = (process.env.ALLOWED_DOMAINS || 'go.buu.ac.th,eng.buu.ac.th').split(',').map((s) => s.trim().toLowerCase());
 const ADMINS = (process.env.ADMIN_EMAILS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 const DEV_AUTH = !PROD && process.env.DEV_AUTH === '1';
-const FORM_YEAR = process.env.FORM_YEAR || String(new Date().getFullYear() + 543);
+// Local numbers for the red mental-health panel, e.g. "ผู้ประสานงานภาคสนาม=0812345678;รพ.ท่าใหม่=039xxxxxx".
+const EMERGENCY = (process.env.EMERGENCY_CONTACTS || '').split(';').map((s) => s.split('='))
+  .filter(([label, tel]) => label?.trim() && tel?.trim()).map(([label, tel]) => ({ label: label.trim(), tel: tel.trim().replace(/[^\d+]/g, '') }));
 
 for (const k of ['SESSION_SECRET', 'DATA_KEY']) {
   if (!process.env[k]) { console.error(`Missing ${k} in .env — see .env.example`); process.exit(1); }
@@ -117,23 +122,24 @@ const need = (...roles) => (req, res, next) => {
 app.get('/api/me', (req, res) => {
   if (!req.user) return res.json({ user: null, devAuth: DEV_AUTH });
   const { id, email, name, picture, role, specialty } = req.user;
-  res.json({ user: { id, email, name, picture, role, specialty, specialties: parseSpecialties(specialty) } });
+  res.json({ user: { id, email, name, picture, role, specialty, specialties: parseSpecialties(specialty) }, emergency: EMERGENCY });
 });
 
 // ---------------------------------------------------------------- visits
 
+// Photos of the house come as "photos"; photos of each repair item as "item_<item uuid>".
+const PHOTOS_MAX = 10;
 const upload = multer({
   storage: multer.diskStorage({
     destination: UPLOAD_DIR,
     filename: (req, file, cb) => cb(null, `${crypto.randomUUID()}${path.extname(file.originalname || '.jpg').toLowerCase() || '.jpg'}`),
   }),
-  limits: { fileSize: 8 * 1024 * 1024, files: 10 },
+  limits: { fileSize: 8 * 1024 * 1024, files: PHOTOS_MAX + ITEMS_MAX * ITEM_PHOTOS_MAX },
   fileFilter: (req, file, cb) => cb(null, /^image\//.test(file.mimetype)),
-});
+}).any();
 
 const str = (v, max = 200) => (v == null || v === '' ? null : String(v).slice(0, max));
 const num = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
-const digits = (v, n) => { const d = String(v || '').replace(/\D/g, ''); return d ? d.slice(0, n) : null; };
 
 // Who may see a visit, and how much of it.
 function access(user, visit) {
@@ -143,33 +149,41 @@ function access(user, visit) {
   return null;
 }
 
-function serializeVisit(v, level) {
-  const out = {
+// The 2Q/9Q/8Q answers are health data: only admins, the volunteer who asked them and mental-health responders
+// see them. Everyone else who can open the visit sees the level and the 9Q/8Q totals.
+const seesMentalDetail = (user, visit) => user.role === 'admin' || visit.created_by === user.id
+  || (user.role === 'responder' && parseSpecialties(user.specialty).includes('mental'));
+
+function serializeVisit(v, user) {
+  const answers = json(v.answers, {});
+  const tri = json(v.triage, {});
+  if (!seesMentalDetail(user, v)) {
+    delete answers.mental;
+    if (tri.mental) tri.mental = { level: tri.mental.level, q9: tri.mental.q9, q8: tri.mental.q8, complete: tri.mental.complete };
+    tri.reasons = (tri.reasons || []).filter((r) => !r.startsWith('สุขภาพใจ:'));
+  }
+  return {
     id: v.id, uuid: v.uuid, created_at: v.created_at, visited_at: v.visited_at, created_by: v.created_by,
-    lat: v.lat, lng: v.lng, accuracy: v.accuracy, consent: !!v.consent,
-    title: v.title, first_name: v.first_name, last_name: v.last_name, age: v.age,
-    residence_type: v.residence_type, residence_other: v.residence_other, address: json(v.address, {}),
-    flood_from: v.flood_from, flood_to: v.flood_to, relief_case: v.relief_case, damage_desc: v.damage_desc,
-    promptpay: v.promptpay, evidence: json(v.evidence, []), answers: json(v.answers, {}),
-    triage_level: v.triage_level, triage: json(v.triage, {}),
+    lat: v.lat, lng: v.lng, accuracy: v.accuracy,
+    first_name: v.first_name, last_name: v.last_name,
+    phone: decrypt(v.phone_enc), line: decrypt(v.line_enc), email: decrypt(v.email_enc), no_contact: !!v.no_contact,
+    address: json(v.address, {}), answers, triage_level: v.triage_level, triage: tri,
     override_level: v.override_level, override_reason: v.override_reason, notes: v.notes,
     level: v.override_level || v.triage_level,
     location_source: v.location_source || 'gps',
   };
-  const id = decrypt(v.national_id_enc);
-  out.phone = decrypt(v.phone_enc);
-  out.national_id = level === 'full' ? id : maskId(id);
-  return out;
 }
 
-app.post('/api/visits', need(), upload.array('photos', 10), (req, res) => {
+app.post('/api/visits', need(), upload, (req, res) => {
+  const files = req.files || [];
   let d;
-  try { d = JSON.parse(req.body.data || '{}'); } catch { return res.status(400).json({ error: 'bad data' }); }
-  if (!d.uuid) return res.status(400).json({ error: 'uuid required' });
+  try { d = JSON.parse(req.body.data || '{}'); } catch { removeFiles(files); return res.status(400).json({ error: 'bad data' }); }
+  const fail = (error) => { removeFiles(files); return res.status(400).json({ error }); };
+  if (!d.uuid) return fail('uuid required');
 
   const dup = db.prepare('SELECT id FROM visits WHERE uuid = ?').get(String(d.uuid));
   if (dup) {
-    for (const f of req.files || []) fs.rm(f.path, () => {});
+    removeFiles(files);
     return res.json({ id: dup.id, duplicate: true });
   }
 
@@ -178,52 +192,57 @@ app.post('/api/visits', need(), upload.array('photos', 10), (req, res) => {
     cannot_travel: !!d.answers?.cannot_travel,
     other_need: str(d.answers?.other_need, 500),
   };
+  if (needsMentalScreening(answers)) answers.mental = cleanMental(d.answers?.mental);
   const result = triage(answers);
-  if (!str(d.first_name) || !str(d.last_name)) return res.status(400).json({ error: 'name required' });
+  if (!str(d.first_name) || !str(d.last_name)) return fail('name required');
+  if (contactError(d)) return fail('contact required');
+  if (result.mental && !result.mental.complete) return fail('mental screening incomplete');
   const locationSource = d.location_source === 'address' ? 'address' : 'gps';
   const a0 = d.address || {};
   if (locationSource === 'address' && !(str(a0.tambon) && str(a0.amphoe) && str(a0.province) && (str(a0.house_no) || str(a0.moo)))) {
-    return res.status(400).json({ error: 'address required' });
+    return fail('address required');
   }
   const override = LEVELS.includes(d.override_level) ? d.override_level : null;
-  if (override && !str(d.override_reason)) return res.status(400).json({ error: 'override reason required' });
-  const consent = d.consent ? 1 : 0;
+  if (override && !str(d.override_reason)) return fail('override reason required');
+  const items = d.items || [];
+  const itemErr = itemsError(items, files);
+  if (itemErr) return fail(itemErr);
+  const housePhotos = files.filter((f) => f.fieldname === 'photos');
+  if (housePhotos.length > PHOTOS_MAX) return fail('too many photos');
 
   const a = d.address || {};
   const address = Object.fromEntries(['house_no', 'village', 'floor', 'moo', 'soi', 'road', 'tambon', 'amphoe', 'province'].map((k) => [k, str(a[k], 100)]));
+  const name = `${str(d.first_name, 100)} ${str(d.last_name, 100)}`;
 
   db.exec('BEGIN');
   try {
     const visitId = Number(db.prepare(`INSERT INTO visits
-      (uuid, created_by, visited_at, lat, lng, accuracy, consent, title, first_name, last_name, age,
-       national_id_enc, phone_enc, residence_type, residence_other, address, flood_from, flood_to,
-       relief_case, damage_desc, promptpay, evidence, answers, triage_level, triage, override_level, override_reason, notes,
-       location_source)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-      String(d.uuid), req.user.id, str(d.visited_at, 40), num(d.lat), num(d.lng), num(d.accuracy), consent,
-      str(d.title, 30), str(d.first_name, 100), str(d.last_name, 100), num(d.age),
-      // Personal identifiers are stored only with consent.
-      consent ? encrypt(digits(d.national_id, 13)) : null, consent ? encrypt(digits(d.phone, 15)) : null,
-      str(d.residence_type, 20), str(d.residence_other, 100), JSON.stringify(address),
-      str(d.flood_from, 10), str(d.flood_to, 10), num(d.relief_case), str(d.damage_desc, 500),
-      ['yes', 'no'].includes(d.promptpay) ? d.promptpay : null, JSON.stringify(Array.isArray(d.evidence) ? d.evidence : []),
-      JSON.stringify(answers), result.level, JSON.stringify(result), override, str(d.override_reason, 500), str(d.notes, 1000),
-      locationSource,
+      (uuid, created_by, visited_at, lat, lng, accuracy, first_name, last_name, phone_enc, line_enc, email_enc, no_contact,
+       address, answers, triage_level, triage, override_level, override_reason, notes, location_source)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      String(d.uuid), req.user.id, str(d.visited_at, 40), num(d.lat), num(d.lng), num(d.accuracy),
+      str(d.first_name, 100), str(d.last_name, 100),
+      encrypt(cleanPhone(d.phone)), encrypt(cleanLine(d.line)), encrypt(cleanEmail(d.email)), d.no_contact ? 1 : 0,
+      JSON.stringify(address), JSON.stringify(answers), result.level, JSON.stringify(result), override,
+      str(d.override_reason, 500), str(d.notes, 1000), locationSource,
     ).lastInsertRowid);
 
     const insT = db.prepare('INSERT INTO tickets (visit_id, category, level) VALUES (?, ?, ?)');
     for (const t of ticketsFor(result, override)) insT.run(visitId, t.category, t.level);
     const insP = db.prepare('INSERT INTO photos (visit_id, filename) VALUES (?, ?)');
-    for (const f of req.files || []) insP.run(visitId, f.filename);
+    for (const f of housePhotos) insP.run(visitId, f.filename);
+    const repairs = insertItems({ items, files, visitId, userId: req.user.id,
+      owner: { name, phone: d.phone, line: d.line, email: d.email, area: address } });
 
     // Safety check-in uses where the volunteer is, which differs from the house when met elsewhere.
     const here = d.here || (locationSource === 'gps' ? d : null);
     if (here && num(here.lat) != null && num(here.lng) != null) checkin(req.user.id, here.lat, here.lng, here.accuracy);
     db.exec('COMMIT');
-    res.json({ id: visitId, level: override || result.level });
+    res.json({ id: visitId, level: override || result.level, repairs });
     if (locationSource === 'address' && num(d.lat) == null) geocodePending();
   } catch (e) {
     db.exec('ROLLBACK');
+    removeFiles(files);
     console.error(e);
     res.status(500).json({ error: 'save failed' });
   }
@@ -234,10 +253,12 @@ app.get('/api/visits', need(), (req, res) => {
   const rows = mine
     ? db.prepare('SELECT * FROM visits WHERE created_by = ? ORDER BY id DESC LIMIT 200').all(req.user.id)
     : db.prepare('SELECT * FROM visits ORDER BY id DESC LIMIT 500').all();
+  const queues = db.prepare('SELECT type, seq FROM repair_items WHERE visit_id = ? ORDER BY id');
   res.json(rows.map((v) => {
-    const s = serializeVisit(v, access(req.user, v));
+    const s = serializeVisit(v, req.user);
     return { id: s.id, created_at: s.created_at, level: s.level, name: `${s.first_name || ''} ${s.last_name || ''}`.trim(),
-      address: s.address, needs: s.answers.needs, tickets: ticketSummary(v.id) };
+      address: s.address, needs: s.answers.needs, tickets: ticketSummary(v.id),
+      repairs: queues.all(v.id).map((r) => queueNo(r.type, r.seq)) };
   }));
 });
 
@@ -246,13 +267,12 @@ const ticketSummary = (visitId) =>
 
 app.get('/api/visits/:id', need(), (req, res) => {
   const v = db.prepare('SELECT * FROM visits WHERE id = ?').get(Number(req.params.id));
-  const lvl = access(req.user, v);
-  if (!lvl) return res.status(404).json({ error: 'not found' });
-  const out = serializeVisit(v, lvl);
+  if (!access(req.user, v)) return res.status(404).json({ error: 'not found' });
+  const out = serializeVisit(v, req.user);
   out.photos = db.prepare('SELECT id FROM photos WHERE visit_id = ?').all(v.id).map((p) => p.id);
   out.tickets = db.prepare(`SELECT t.*, u.name AS assignee_name FROM tickets t LEFT JOIN users u ON u.id = t.assignee_id WHERE visit_id = ?`).all(v.id);
+  out.repairs = itemsOfVisit(v.id);
   out.creator = db.prepare('SELECT name, email FROM users WHERE id = ?').get(v.created_by);
-  out.can_print = lvl === 'full';
   res.json(out);
 });
 
@@ -262,32 +282,7 @@ app.get('/api/photos/:id', need(), (req, res) => {
   res.sendFile(path.join(UPLOAD_DIR, path.basename(p.filename)));
 });
 
-// ---------------------------------------------------------------- print links (no login)
-
-app.post('/api/visits/:id/print-link', need(), (req, res) => {
-  const v = db.prepare('SELECT * FROM visits WHERE id = ?').get(Number(req.params.id));
-  if (access(req.user, v) !== 'full') return res.status(404).json({ error: 'not found' });
-  if (!v.consent) return res.status(400).json({ error: 'no consent' });
-  const { token, expires } = makePrintToken(v.id);
-  res.json({ url: `${PUBLIC_URL}/print/${token}`, expires });
-});
-
-app.get('/print/:token', (req, res) => {
-  const id = readPrintToken(req.params.token);
-  const v = id && db.prepare('SELECT * FROM visits WHERE id = ?').get(id);
-  res.set('Cache-Control', 'no-store').set('X-Robots-Tag', 'noindex');
-  if (!v) return res.status(410).send(renderExpired());
-  const data = serializeVisit(v, 'full');
-  data.photos = db.prepare('SELECT id FROM photos WHERE visit_id = ?').all(v.id);
-  res.send(renderForm(data, { year: FORM_YEAR, photoUrl: (pid) => `${req.params.token}/photo/${pid}` }));
-});
-
-app.get('/print/:token/photo/:pid', (req, res) => {
-  const id = readPrintToken(req.params.token);
-  const p = id && db.prepare('SELECT * FROM photos WHERE id = ? AND visit_id = ?').get(Number(req.params.pid), id);
-  if (!p) return res.status(404).end();
-  res.sendFile(path.join(UPLOAD_DIR, path.basename(p.filename)));
-});
+mountRepairs(app, { need, upload });
 
 // ---------------------------------------------------------------- tickets
 
@@ -308,7 +303,7 @@ app.get('/api/tickets', need('responder', 'office', 'admin'), (req, res) => {
   const scope = ticketScope(req.user);
   const active = req.query.status !== 'closed';
   const rows = db.prepare(`
-    SELECT t.*, v.first_name, v.last_name, v.lat, v.lng, v.address, v.phone_enc, v.answers, v.location_source,
+    SELECT t.*, v.first_name, v.last_name, v.lat, v.lng, v.address, v.phone_enc, v.line_enc, v.email_enc, v.answers, v.triage, v.location_source,
            u.name AS assignee_name
     FROM tickets t JOIN visits v ON v.id = t.visit_id LEFT JOIN users u ON u.id = t.assignee_id
     WHERE ${scope.where} AND t.status ${active ? "NOT IN ('done','referred')" : "IN ('done','referred')"}
@@ -319,13 +314,17 @@ app.get('/api/tickets', need('responder', 'office', 'admin'), (req, res) => {
     return {
       id: t.id, visit_id: t.visit_id, category: t.category, level: t.level, status: t.status,
       assignee_id: t.assignee_id, assignee_name: t.assignee_name, created_at: t.created_at, updated_at: t.updated_at,
-      name: `${t.first_name || ''} ${t.last_name || ''}`.trim(), phone: decrypt(t.phone_enc),
+      name: `${t.first_name || ''} ${t.last_name || ''}`.trim(), phone: decrypt(t.phone_enc), line: decrypt(t.line_enc), email: decrypt(t.email_enc),
       lat: t.lat, lng: t.lng, address: json(t.address, {}), location_source: t.location_source,
       items: (answers.needs || []).filter((n) => NEEDS.find((x) => x.id === n)?.cat === t.category),
       other_need: t.category === 'general' ? answers.other_need : null,
+      // Whoever holds a mental-health ticket is caring for that person, so they get the screening result.
+      mental: t.category === 'mental' ? mentalSummary(json(t.triage, {}).mental) : null,
     };
   }));
 });
+
+const mentalSummary = (m) => (m ? { level: m.level, summary: m.summary, flags: m.flags || [] } : null);
 
 app.get('/api/tickets/count', need('responder', 'office', 'admin'), (req, res) => {
   const scope = ticketScope(req.user);
@@ -404,7 +403,7 @@ app.get('/api/users', need('admin'), (req, res) => {
 
 app.patch('/api/users/:id', need('admin'), (req, res) => {
   const { role, specialty } = req.body || {};
-  if (!['volunteer', 'responder', 'office', 'admin'].includes(role)) return res.status(400).json({ error: 'role' });
+  if (!['volunteer', 'responder', 'fixer', 'office', 'admin'].includes(role)) return res.status(400).json({ error: 'role' });
   const list = role === 'responder' ? parseSpecialties(specialty).join(',') || null : null;
   db.prepare('UPDATE users SET role = ?, specialty = ? WHERE id = ?').run(role, list, Number(req.params.id));
   res.json({ ok: true });

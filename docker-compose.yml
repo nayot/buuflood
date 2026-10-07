@@ -7,7 +7,7 @@ services:
     env_file: .env
     environment:
       NODE_ENV: production
-      TZ: Asia/Bangkok        # dates printed on the relief form
+      TZ: Asia/Bangkok
     ports:
       # Loopback only: reachable through the host's nginx reverse proxy.
       - "127.0.0.1:3011:3000"

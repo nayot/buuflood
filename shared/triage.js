@@ -1,10 +1,16 @@
 // Triage rules shared by the client (live preview) and the server (authoritative result).
-// Edit this file to change the questions or how they are graded.
+// Edit this file to change the questions or how they are graded. The mental-health screening (2Q/9Q/8Q) is in
+// mental.js and the Fixing Centre item types in repairs.js.
+//
+// Mental-health level: ticking any สุขภาพใจ need starts the 2Q/9Q/8Q screening, and the category takes the
+// screening's level. `m_crisis` ticked is red whatever the screening says. "Cannot travel" still lifts green to yellow.
 //
 // Levels: green < yellow < red.
 //   red    — danger to life or health: visit urgently, refer onwards
 //   yellow — at risk or cannot travel: expert home visit by appointment
 //   green  — not urgent: come to the service station (อบต. / รพ.สต.)
+
+import { scoreMental } from './mental.js';
 
 export const LEVELS = ['green', 'yellow', 'red'];
 
@@ -70,10 +76,14 @@ export const IMMOBILE_ID = 'cannot_travel';
 const rank = (l) => LEVELS.indexOf(l);
 export const maxLevel = (a, b) => (rank(a) >= rank(b) ? a : b);
 
+export const needsMentalScreening = (answers = {}) =>
+  (answers.needs || []).some((id) => NEEDS.find((n) => n.id === id)?.cat === 'mental');
+
 /**
  * Grade a visit.
- * @param {{needs: string[], cannot_travel?: boolean, other_need?: string}} answers
- * @returns {{level: string|null, categories: Record<string,{level:string, items:string[]}>, reasons: string[]}}
+ * @param {{needs: string[], cannot_travel?: boolean, other_need?: string, mental?: object}} answers
+ * @returns {{level: string|null, categories: Record<string,{level:string, items:string[]}>, reasons: string[],
+ *   mental: object|null}}  `mental` is the 2Q/9Q/8Q result when a mental need is ticked.
  */
 export function triage(answers = {}) {
   const picked = new Set(answers.needs || []);
@@ -82,9 +92,17 @@ export function triage(answers = {}) {
   for (const n of NEEDS) {
     if (!picked.has(n.id)) continue;
     const c = (categories[n.cat] ||= { level: 'green', items: [] });
-    c.level = maxLevel(c.level, n.level);
+    if (n.cat !== 'mental') c.level = maxLevel(c.level, n.level);
     c.items.push(n.id);
-    if (n.level !== 'green') reasons.push(n.label);
+    if (n.level !== 'green' && n.cat !== 'mental') reasons.push(n.label);
+  }
+  let mental = null;
+  if (categories.mental) {
+    mental = scoreMental(answers.mental);
+    const crisis = picked.has('m_crisis');
+    categories.mental.level = crisis ? 'red' : mental.level || 'green';
+    if (crisis) reasons.push(NEEDS.find((n) => n.id === 'm_crisis').label);
+    if (mental.complete && mental.level !== 'green') reasons.push(`สุขภาพใจ: ${mental.summary}${mental.flags.length ? ` (${mental.flags.join(', ')})` : ''}`);
   }
   if (answers.other_need && answers.other_need.trim()) {
     categories.general ||= { level: 'green', items: [] };
@@ -100,7 +118,7 @@ export function triage(answers = {}) {
   }
   let level = null;
   for (const c of Object.values(categories)) level = level ? maxLevel(level, c.level) : c.level;
-  return { level, categories, reasons };
+  return { level, categories, reasons, mental };
 }
 
 /**
@@ -118,27 +136,6 @@ export function ticketsFor(result, override) {
   }
   return out;
 }
-
-// The four cases on the government relief form (แบบคำร้องขอรับความช่วยเหลือผู้ประสบอุทกภัย).
-export const RELIEF_CASES = {
-  1: 'ที่อยู่อาศัยประจำอยู่ในพื้นที่น้ำท่วม ดินถล่ม น้ำท่วมฉับพลัน น้ำป่าไหลหลาก น้ำล้นตลิ่ง ไม่เกิน 7 วัน และทรัพย์สินได้รับความเสียหาย',
-  2: 'ที่อยู่อาศัยประจำถูกน้ำท่วมขัง ติดต่อกัน เกินกว่า 7 วัน',
-  3: 'ที่อยู่อาศัยประจำที่ถูกน้ำล้อมรอบ และได้รับผลกระทบ ติดต่อกัน เกินกว่า 7 วัน',
-  4: 'ที่อยู่อาศัยประจำในอาคารสูงที่น้ำท่วมไม่ถึงชั้นที่ผู้ประสบภัยพักอาศัย และได้รับผลกระทบ ติดต่อกัน เกินกว่า 7 วัน',
-};
-
-export const RESIDENCE_TYPES = {
-  registered: 'บ้านที่มีทะเบียนบ้าน',
-  rented: 'บ้านเช่า',
-  other: 'อื่น ๆ',
-};
-
-export const EVIDENCE = {
-  id_card: 'บัตรประชาชน',
-  lease: 'สัญญาเช่า/หนังสือรับรองการเช่าจาก อปท.',
-  no_house_no: 'หนังสือรับรองบ้านไม่มีเลขที่',
-  poa: 'หนังสือมอบอำนาจ',
-};
 
 export const TICKET_STATUS = {
   open: 'ใหม่',

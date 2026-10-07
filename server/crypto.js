@@ -1,4 +1,4 @@
-// Field encryption for personal data (national ID, phone) and signed print links.
+// Field encryption for personal data (phone, LINE, email).
 import crypto from 'node:crypto';
 
 function key() {
@@ -25,24 +25,4 @@ export function decrypt(blob) {
   return Buffer.concat([d.update(enc), d.final()]).toString('utf8');
 }
 
-export const maskId = (id) => (id ? `${id.slice(0, 1)}-xxxx-xxxxx-${id.slice(10, 12)}-${id.slice(12)}` : null);
 export const maskPhone = (p) => (p ? `${p.slice(0, 3)}-xxx-${p.slice(-4)}` : null);
-
-// Print links: "<visitId>.<expiresEpochSec>.<hmac>" — no login needed, expires on its own.
-const sign = (payload) =>
-  crypto.createHmac('sha256', process.env.SESSION_SECRET).update(payload).digest('base64url');
-
-export function makePrintToken(visitId, days = Number(process.env.PRINT_LINK_DAYS || 14)) {
-  const exp = Math.floor(Date.now() / 1000) + days * 86400;
-  const payload = `${visitId}.${exp}`;
-  return { token: `${payload}.${sign(payload)}`, expires: new Date(exp * 1000).toISOString() };
-}
-
-export function readPrintToken(token) {
-  const [id, exp, mac] = String(token).split('.');
-  if (!id || !exp || !mac) return null;
-  const good = sign(`${id}.${exp}`);
-  if (mac.length !== good.length || !crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(good))) return null;
-  if (Number(exp) * 1000 < Date.now()) return null;
-  return Number(id);
-}
