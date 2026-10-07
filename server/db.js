@@ -87,6 +87,14 @@ if (!hasColumn('visits', 'location_source')) {
   // gps = phone position at the house; address = met elsewhere, located by address (optionally a map pin)
   db.exec("ALTER TABLE visits ADD COLUMN location_source TEXT NOT NULL DEFAULT 'gps'");
 }
+if (!hasColumn('visits', 'approx_lat')) {
+  // Approximate position looked up from the address (address mode without a pin). Never used for navigation.
+  // approx_level: village | tambon | amphoe | none (not found); geocoded_at is set after every finished lookup.
+  db.exec('ALTER TABLE visits ADD COLUMN approx_lat REAL');
+  db.exec('ALTER TABLE visits ADD COLUMN approx_lng REAL');
+  db.exec('ALTER TABLE visits ADD COLUMN approx_level TEXT');
+  db.exec('ALTER TABLE visits ADD COLUMN geocoded_at TEXT');
+}
 
 export const json = (s, fallback = null) => {
   if (s == null) return fallback;

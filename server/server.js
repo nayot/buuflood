@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { db, json, UPLOAD_DIR } from './db.js';
 import { encrypt, decrypt, maskId, makePrintToken, readPrintToken } from './crypto.js';
 import { renderForm, renderExpired } from './print.js';
+import { geocodePending } from './geocode.js';
 import { triage, ticketsFor, CATEGORIES, LEVELS, TICKET_STATUS, NEEDS, parseSpecialties } from '../shared/triage.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -220,6 +221,7 @@ app.post('/api/visits', need(), upload.array('photos', 10), (req, res) => {
     if (here && num(here.lat) != null && num(here.lng) != null) checkin(req.user.id, here.lat, here.lng, here.accuracy);
     db.exec('COMMIT');
     res.json({ id: visitId, level: override || result.level });
+    if (locationSource === 'address' && num(d.lat) == null) geocodePending();
   } catch (e) {
     db.exec('ROLLBACK');
     console.error(e);
@@ -380,9 +382,10 @@ app.post('/api/checkout', need(), (req, res) => {
 // ---------------------------------------------------------------- dashboard
 
 app.get('/api/dashboard', need('responder', 'office', 'admin'), (req, res) => {
-  const visits = db.prepare('SELECT id, lat, lng, triage_level, override_level, created_at, address, answers, location_source, first_name, last_name FROM visits ORDER BY id DESC LIMIT 2000').all()
+  const visits = db.prepare('SELECT id, lat, lng, approx_lat, approx_lng, approx_level, triage_level, override_level, created_at, address, answers, location_source, first_name, last_name FROM visits ORDER BY id DESC LIMIT 2000').all()
     .map((v) => ({
       id: v.id, lat: v.lat, lng: v.lng, created_at: v.created_at, location_source: v.location_source,
+      approx_lat: v.approx_lat, approx_lng: v.approx_lng, approx_level: v.approx_level,
       name: `${v.first_name || ''} ${v.last_name || ''}`.trim(),
       level: v.override_level || v.triage_level, address: json(v.address, {}), needs: json(v.answers, {}).needs || [],
       open: db.prepare("SELECT COUNT(*) AS n FROM tickets WHERE visit_id = ? AND status NOT IN ('done','referred')").get(v.id).n,
@@ -429,3 +432,7 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`buuflood listening on :${PORT} (public URL ${PUBLIC_URL})`));
+
+// Approximate map positions for address-only visits: backfill at start, then retry failed lookups every 5 minutes.
+geocodePending();
+setInterval(geocodePending, 5 * 60 * 1000).unref();

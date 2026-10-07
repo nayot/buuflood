@@ -21,6 +21,8 @@ User-facing documentation is in README.md; this file covers conventions only.
 - **Location:** `visits.location_source` is `gps` (phone at the house) or `address` (met elsewhere: `lat`/`lng` is the
   optional map pin or null). Use `navLink()`/`placeLink()`/`canLocate()` from `client/src/lib/api.js`; they fall back to a
   Google Maps address search. The safety check-in uses the volunteer's own position (`here`), not the house.
+  Address-only visits get `approx_lat`/`approx_lng`/`approx_level` from `server/geocode.js` (Nominatim, 1 req/s, no house
+  number or name sent). They are for the dashboard map only; never use them for navigation.
 - **Required on save:** the villager's first and last name; in `address` mode also `tambon`, `amphoe`, `province` and
   `house_no` or `moo`. The server returns 400 for missing ones, so validate the same fields in the client.
 - **Personal data:** the national ID and phone are encrypted with `encrypt()`/`decrypt()` (`server/crypto.js`) and stored only

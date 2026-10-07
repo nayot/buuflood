@@ -16,6 +16,30 @@ const personIcon = L.divIcon({
   iconSize: [26, 26], iconAnchor: [13, 13],
 });
 
+// Not a GPS fix: the villager was met away from home. Purple outline; dashed when looked up from the address.
+const AWAY = '#7c3aed';
+const APPROX_LEVEL = { village: 'ระดับหมู่บ้าน', tambon: 'ระดับตำบล', amphoe: 'ระดับอำเภอ' };
+
+/** Where to draw each visit: its GPS fix or pin, else the address lookup. Visits sharing a lookup point are
+ * spread on a small spiral (about 100 m apart) so each one can be tapped. */
+function placeVisits(visits) {
+  const seen = {};
+  return visits.map((v) => {
+    if (v.lat != null) return { ...v, pos: [v.lat, v.lng], kind: v.location_source === 'address' ? 'pin' : 'gps' };
+    const key = `${v.approx_lat},${v.approx_lng}`;
+    const k = (seen[key] = (seen[key] ?? -1) + 1);
+    const r = 0.0009 * Math.sqrt(k), t = k * 2.39996;
+    return { ...v, pos: [v.approx_lat + r * Math.sin(t), v.approx_lng + r * Math.cos(t)], kind: 'approx' };
+  });
+}
+
+function markerStyle(v) {
+  const fill = LEVEL_COLOR[v.level] || '#888';
+  if (v.kind === 'gps') return { color: '#fff', weight: 2, fillColor: fill, fillOpacity: 0.95 };
+  if (v.kind === 'pin') return { color: AWAY, weight: 3, fillColor: fill, fillOpacity: 0.95 };
+  return { color: AWAY, weight: 3, dashArray: '4 3', fillColor: fill, fillOpacity: 0.5 };
+}
+
 function FitBounds({ points }) {
   const map = useMap();
   const [done, setDone] = useState(false);
@@ -41,12 +65,13 @@ export default function Dashboard() {
     return () => clearInterval(t);
   }, []);
 
-  const visits = useMemo(() => (d?.visits || []).filter((v) => v.lat != null
+  const mappable = (v) => v.lat != null || v.approx_lat != null;
+  const visits = useMemo(() => placeVisits((d?.visits || []).filter((v) => mappable(v)
     && (!v.level || levels[v.level])
     && (!cat || v.needs.some((n) => NEEDS.find((x) => x.id === n)?.cat === cat))
-    && (!openOnly || v.open > 0)), [d, levels, cat, openOnly]);
+    && (!openOnly || v.open > 0))), [d, levels, cat, openOnly]);
 
-  const unmapped = useMemo(() => (d?.visits || []).filter((v) => v.lat == null), [d]);
+  const unmapped = useMemo(() => (d?.visits || []).filter((v) => !mappable(v)), [d]);
 
   const counts = useMemo(() => {
     const c = { red: 0, yellow: 0, green: 0, total: d?.visits.length || 0 };
@@ -88,13 +113,15 @@ export default function Dashboard() {
       <div className="card p-0 overflow-hidden">
         <MapContainer center={CENTER} zoom={12} style={{ height: '60vh' }} scrollWheelZoom>
           <TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          <FitBounds points={visits.map((v) => [v.lat, v.lng])} />
+          <FitBounds points={visits.map((v) => v.pos)} />
           {visits.map((v) => (
-            <CircleMarker key={v.id} center={[v.lat, v.lng]} radius={v.level === 'red' ? 10 : 8}
-              pathOptions={{ color: '#fff', weight: 2, fillColor: LEVEL_COLOR[v.level] || '#888', fillOpacity: 0.95 }}>
+            <CircleMarker key={v.id} center={v.pos} radius={(v.level === 'red' ? 10 : 8) + (v.kind === 'approx' ? 2 : 0)}
+              pathOptions={markerStyle(v)}>
               <Popup>
                 <div className="text-sm">
                   <b>{LEVEL_LABELS[v.level] || 'ยังไม่คัดกรอง'}</b><br />
+                  {v.kind === 'pin' && <><span style={{ color: AWAY }}>พบนอกบ้าน · หมุดที่ปักเอง</span><br /></>}
+                  {v.kind === 'approx' && <><span style={{ color: AWAY }}>พบนอกบ้าน · ตำแหน่งโดยประมาณจากที่อยู่ ({APPROX_LEVEL[v.approx_level]}) ไม่ใช่ตำแหน่งบ้าน</span><br /></>}
                   {addressLine(v.address)}<br />
                   {[...new Set(v.needs.map((n) => NEEDS.find((x) => x.id === n)?.cat))].filter(Boolean).map((c) => CATEGORIES[c].icon).join(' ')}
                   {' '}งานค้าง {v.open} · {timeAgo(v.created_at)}<br />
@@ -109,12 +136,17 @@ export default function Dashboard() {
             </Marker>
           ))}
         </MapContainer>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 px-3 py-2 text-xs text-neutral-600">
+          <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-neutral-500 border-2 border-white shadow" />GPS ที่บ้าน</span>
+          <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-neutral-500 border-2" style={{ borderColor: AWAY }} />พบนอกบ้าน · ปักหมุด</span>
+          <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-neutral-500/50 border-2 border-dashed" style={{ borderColor: AWAY }} />พบนอกบ้าน · ประมาณจากที่อยู่</span>
+        </div>
       </div>
 
       {unmapped.length > 0 && (
         <div className="card">
           <h2 className="font-bold mb-1">ไม่มีพิกัดบนแผนที่ ({unmapped.length})</h2>
-          <p className="text-xs text-neutral-500 mb-2">พบผู้ประสบภัยนอกบ้านและไม่ได้ปักหมุด ใช้ที่อยู่นำทาง</p>
+          <p className="text-xs text-neutral-500 mb-2">พบผู้ประสบภัยนอกบ้าน ไม่ได้ปักหมุด และยังหาตำแหน่งจากที่อยู่ไม่ได้ ใช้ที่อยู่นำทาง</p>
           <ul className="text-sm divide-y">
             {unmapped.map((v) => (
               <li key={v.id} className="py-1.5 flex items-center justify-between gap-2">

@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.3 — 2026-10-07
+
+- **Map shows households met away from home.** When a visit is recorded by address with no map pin, the server
+  looks up an approximate position (village, then ตำบล, then อำเภอ) from OpenStreetMap Nominatim and the map plots it.
+  Only the village, ตำบล, อำเภอ and จังหวัด are sent, never the house number or name. Existing visits are filled in at
+  start-up and failed lookups are retried every 5 minutes. The estimate is kept apart from `lat`/`lng`, so navigation
+  still uses the address or pin.
+- **Marker outline shows where the position came from:** white = GPS at the house, purple = pinned by hand,
+  purple dashed with a paler fill = estimated from the address. A legend is shown under the map, and visits sharing an
+  estimated point are spread out so each can be tapped.
+- User guide: the new map legend.
+
 ## 1.0.2 — 2026-10-07
 
 - The Docker image now includes `scripts/`, so household data can be purged with
