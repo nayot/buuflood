@@ -1,7 +1,7 @@
 // Fixing Centre (ศูนย์ซ่อม): repair items with a queue number per type, photos, status history and a report.
 import fs from 'node:fs';
 import path from 'node:path';
-import { db, json, UPLOAD_DIR } from './db.js';
+import { db, json } from './db.js';
 import { encrypt, decrypt } from './crypto.js';
 import { REPAIR_TYPES, REPAIR_STATUS, ITEM_PHOTOS_MAX, ITEMS_MAX, queueNo } from '../shared/repairs.js';
 import { contactError, cleanPhone, cleanLine, cleanEmail } from '../shared/contact.js';
@@ -113,7 +113,7 @@ export function mountRepairs(app, { need, upload }) {
   app.get('/api/repair-photos/:id', need(), (req, res) => {
     const p = db.prepare('SELECT p.filename, r.* FROM repair_photos p JOIN repair_items r ON r.id = p.item_id WHERE p.id = ?').get(Number(req.params.id));
     if (!p || !canSee(req.user, p)) return res.status(404).end();
-    res.sendFile(path.join(UPLOAD_DIR, path.basename(p.filename)));
+    res.sendFile(path.join(req.uploadDir, path.basename(p.filename)));
   });
 
   // Walk-in at the centre: owner + items in one request. Online only, so the queue numbers come back at once.

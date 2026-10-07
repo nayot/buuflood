@@ -3,12 +3,20 @@ export class ApiError extends Error {
   constructor(status, body) { super(body?.error || `HTTP ${status}`); this.status = status; this.body = body; }
 }
 
+// Admin test mode, as last reported by api/me. Every change is sent with the mode the screen shows; the server
+// answers 409 when it differs (e.g. test mode expired), and the app reloads the mode instead of saving.
+let testMode = null;
+export const setTestMode = (on) => { testMode = on; };
+export const MODE_CHANGED = 'buuflood:mode';
+
 export async function api(path, { method = 'GET', body } = {}) {
   const opts = { method, credentials: 'same-origin', headers: {} };
+  if (testMode != null) opts.headers['X-Test-Mode'] = testMode ? '1' : '0';
   if (body instanceof FormData) opts.body = body;
   else if (body !== undefined) { opts.body = JSON.stringify(body); opts.headers['Content-Type'] = 'application/json'; }
   const r = await fetch(path, opts);
   const data = await r.json().catch(() => ({}));
+  if (r.status === 409 && data.error === 'mode') window.dispatchEvent(new Event(MODE_CHANGED));
   if (!r.ok) throw new ApiError(r.status, data);
   return data;
 }

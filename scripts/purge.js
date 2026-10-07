@@ -6,7 +6,8 @@
 import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
-import { db, UPLOAD_DIR } from '../server/db.js';
+// Production data only; the admin test-mode sandbox is cleared from the app (or by deleting DATA_DIR/sandbox).
+import { prodDb as db, UPLOAD_DIR } from '../server/db.js';
 
 const args = process.argv.slice(2);
 const all = args.includes('--all');

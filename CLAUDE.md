@@ -13,6 +13,13 @@ User-facing documentation is in README.md; this file covers conventions only.
   leading `/` in a client URL.
 - **Storage:** `node:sqlite` (`server/db.js`, schema is `CREATE TABLE IF NOT EXISTS`; add columns with
   `ALTER TABLE` guarded by `hasColumn()` at the end of `db.js`). Photos are in `DATA_DIR/uploads`.
+- **Admin test mode:** a sandbox database in `DATA_DIR/sandbox/` (same schema, own uploads, users copied with the same
+  ids). The flag is `testUntil` in the signed session (8 h) and is honoured only for production admins. Request code uses
+  the `db` proxy from `db.js`, which resolves per request (AsyncLocalStorage) and **throws outside a request** rather than
+  falling back to production; background jobs and scripts use `prodDb` or `withDb()`. Multer callbacks lose the context,
+  so uploads use `req.uploadDir` and the wrapped `upload`. Never prepare statements at module level. Guards against
+  cross-mode writes: the outbox keeps a separate `outbox-test` key and every queued visit carries `test`; mutating API
+  calls send `X-Test-Mode`; the server answers 409 on a mismatch, which the outbox treats as "keep".
 - **Purging data:** `scripts/purge.js --all --yes` or `--older-than N` deletes visits (tickets, updates and photo rows
   cascade), photo files and (with `--all`) check-ins, and keeps users. In Docker: `docker compose exec app node scripts/purge.js …`.
 - **Specialties:** `users.specialty` is a comma-separated list (`electrical,structural`). Always read it through

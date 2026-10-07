@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.1.0 — 2026-10-08
+
+- **Admin test mode (โหมดทดสอบ):** admins can switch it on in the ⋯ menu to rehearse or demonstrate the app without
+  touching the real data. Everything done meanwhile (visits, photos, tickets, repair items, check-ins, role changes)
+  goes to a separate sandbox database in `DATA_DIR/sandbox/`, and the real data is not shown. An orange striped bar
+  stays under the header while it is on, with a role picker (ทดสอบเป็น: volunteer, each responder specialty, fixer,
+  office, admin), a reset button and the time it switches itself off (after 8 hours).
+  - Isolation: the database is chosen per request and the code refuses to run a query when it cannot tell which one,
+    rather than falling back to production. Test mode has its own outbox on the phone, every queued visit records its
+    mode, and every change is sent with the mode the screen shows; the server answers 409 on a mismatch and the outbox
+    keeps the visit instead of sending it to the other database.
+  - Real visits still waiting to be sent must go first before test mode can be switched on; unsent test visits are
+    dropped when it is switched off.
+- **Visit form:** the sections now run ตำแหน่งบ้าน → ผู้ประสบภัยและช่องทางติดต่อ → ที่อยู่ → ความต้องการ. When
+  "ไม่ได้พบที่บ้าน" is ticked, บ้านเลขที่ or หมู่, ตำบล, อำเภอ and จังหวัด are marked required and checked by the browser.
+- **House photos removed** from the visit form (repair items still need theirs). The server still accepts them, so
+  visits queued by 2.0.0 upload as before.
+- `purge.js` deletes production data only; test data is cleared from the app.
+- User guide: the new form order and a test-mode section for admins.
+
 ## 2.0.0 — 2026-10-08
 
 Major release. **Deploy only when no phone shows "รอส่ง"**: visits queued by 1.x have no contact field and would be

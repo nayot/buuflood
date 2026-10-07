@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { db, json, UPLOAD_DIR } from './db.js';
+import { db, prodDb, json, withDb, uploadDir, sandboxDb, sandboxOpen, syncSandboxUsers, resetSandbox } from './db.js';
 import { encrypt, decrypt } from './crypto.js';
 import { geocodePending } from './geocode.js';
 import { mountRepairs, insertItems, itemsError, itemsOfVisit, removeFiles } from './repairs.js';
@@ -50,21 +50,49 @@ app.use(cookieSession({
   maxAge: 14 * 86400 * 1000,
 }));
 
+// ---------------------------------------------------------------- database of this request (production or test mode)
+
+// Admin test mode: everything the admin does goes to the sandbox database (DATA_DIR/sandbox), never to production.
+// The flag lives in the signed session cookie, so photo and CSV links follow it too, and it expires on its own.
+const TEST_HOURS = 8;
+app.use((req, res, next) => {
+  const uid = req.session?.uid;
+  req.prodUser = uid ? prodDb.prepare('SELECT * FROM users WHERE id = ?').get(uid) : null;
+  req.test = req.prodUser?.role === 'admin' && req.session.testUntil > Date.now();
+  if (req.session?.testUntil && !req.test) req.session.testUntil = null;
+  req.dbx = req.test ? sandboxDb() : prodDb;
+  withDb(req.dbx, () => {
+    req.uploadDir = uploadDir();
+    req.user = req.prodUser;
+    if (req.test) {
+      const get = () => db.prepare('SELECT * FROM users WHERE id = ?').get(uid);
+      req.user = get() || (syncSandboxUsers(), get());
+    }
+    // The client says which mode it thinks it is in; a change it has not seen yet (e.g. test mode expired)
+    // must not send its next action to the other database.
+    const expect = req.get('X-Test-Mode');
+    if (req.method !== 'GET' && req.path.startsWith('/api/') && expect != null && (expect === '1') !== req.test) {
+      return res.status(409).json({ error: 'mode', test: req.test });
+    }
+    next();
+  });
+});
+
 // ---------------------------------------------------------------- auth
 
 const allowedEmail = (email) => DOMAINS.includes(String(email).toLowerCase().split('@')[1]);
 
 function upsertUser({ email, name, picture }) {
   email = email.toLowerCase();
-  const existing = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  const existing = prodDb.prepare('SELECT * FROM users WHERE email = ?').get(email);
   if (existing) {
     const role = ADMINS.includes(email) ? 'admin' : existing.role;
-    db.prepare("UPDATE users SET name = ?, picture = ?, role = ?, last_login = datetime('now') WHERE id = ?")
+    prodDb.prepare("UPDATE users SET name = ?, picture = ?, role = ?, last_login = datetime('now') WHERE id = ?")
       .run(name || existing.name, picture || existing.picture, role, existing.id);
     return existing.id;
   }
   const role = ADMINS.includes(email) ? 'admin' : 'volunteer';
-  return Number(db.prepare("INSERT INTO users (email, name, picture, role, last_login) VALUES (?, ?, ?, ?, datetime('now'))")
+  return Number(prodDb.prepare("INSERT INTO users (email, name, picture, role, last_login) VALUES (?, ?, ?, ?, datetime('now'))")
     .run(email, name || email, picture || null, role).lastInsertRowid);
 }
 
@@ -97,7 +125,7 @@ if (DEV_AUTH) {
     const email = String(req.query.email || 'dev@eng.buu.ac.th');
     if (!allowedEmail(email)) return res.status(403).send('domain not allowed');
     const uid = upsertUser({ email, name: email.split('@')[0] });
-    if (req.query.role) db.prepare('UPDATE users SET role = ?, specialty = ? WHERE id = ?').run(String(req.query.role), parseSpecialties(req.query.specialty).join(',') || null, uid);
+    if (req.query.role) prodDb.prepare('UPDATE users SET role = ?, specialty = ? WHERE id = ?').run(String(req.query.role), parseSpecialties(req.query.specialty).join(',') || null, uid);
     req.session = { uid };
     res.redirect(`${PUBLIC_URL}/#/`);
   });
@@ -105,13 +133,6 @@ if (DEV_AUTH) {
 }
 
 app.post('/auth/logout', (req, res) => { req.session = null; res.json({ ok: true }); });
-
-function loadUser(req, res, next) {
-  const uid = req.session?.uid;
-  req.user = uid ? db.prepare('SELECT * FROM users WHERE id = ?').get(uid) : null;
-  next();
-}
-app.use(loadUser);
 
 const need = (...roles) => (req, res, next) => {
   if (!req.user) return res.status(401).json({ error: 'login' });
@@ -122,21 +143,52 @@ const need = (...roles) => (req, res, next) => {
 app.get('/api/me', (req, res) => {
   if (!req.user) return res.json({ user: null, devAuth: DEV_AUTH });
   const { id, email, name, picture, role, specialty } = req.user;
-  res.json({ user: { id, email, name, picture, role, specialty, specialties: parseSpecialties(specialty) }, emergency: EMERGENCY });
+  res.json({ user: { id, email, name, picture, role, specialty, specialties: parseSpecialties(specialty), realRole: req.prodUser.role },
+    test: req.test ? { until: req.session.testUntil } : null, emergency: EMERGENCY });
+});
+
+// ---------------------------------------------------------------- admin test mode
+
+const realAdmin = (req, res, next) => (req.prodUser?.role === 'admin' ? next() : res.status(403).json({ error: 'forbidden' }));
+
+app.post('/api/test-mode', realAdmin, (req, res) => {
+  if (req.body?.on) {
+    req.session.testUntil = Date.now() + TEST_HOURS * 3600 * 1000;
+    syncSandboxUsers();
+  } else req.session.testUntil = null;
+  res.json({ ok: true });
+});
+
+// Test as another role: changes only the admin's own account inside the sandbox. Leaving test mode always works,
+// because it is checked against the production role.
+app.post('/api/test-mode/role', realAdmin, (req, res) => {
+  if (!req.test) return res.status(409).json({ error: 'mode', test: false });
+  const { role, specialty } = req.body || {};
+  if (!['volunteer', 'responder', 'fixer', 'office', 'admin'].includes(role)) return res.status(400).json({ error: 'role' });
+  const list = role === 'responder' ? parseSpecialties(specialty).join(',') || null : null;
+  db.prepare('UPDATE users SET role = ?, specialty = ? WHERE id = ?').run(role, list, req.prodUser.id);
+  res.json({ ok: true });
+});
+
+app.post('/api/test-mode/reset', realAdmin, (req, res) => {
+  resetSandbox();
+  res.json({ ok: true });
 });
 
 // ---------------------------------------------------------------- visits
 
 // Photos of the house come as "photos"; photos of each repair item as "item_<item uuid>".
 const PHOTOS_MAX = 10;
-const upload = multer({
+const rawUpload = multer({
   storage: multer.diskStorage({
-    destination: UPLOAD_DIR,
+    destination: (req, file, cb) => cb(null, req.uploadDir),
     filename: (req, file, cb) => cb(null, `${crypto.randomUUID()}${path.extname(file.originalname || '.jpg').toLowerCase() || '.jpg'}`),
   }),
   limits: { fileSize: 8 * 1024 * 1024, files: PHOTOS_MAX + ITEMS_MAX * ITEM_PHOTOS_MAX },
   fileFilter: (req, file, cb) => cb(null, /^image\//.test(file.mimetype)),
 }).any();
+// Multer calls back from the request stream, outside the request's database context: put it back.
+const upload = (req, res, next) => rawUpload(req, res, (err) => withDb(req.dbx, () => next(err)));
 
 const str = (v, max = 200) => (v == null || v === '' ? null : String(v).slice(0, max));
 const num = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
@@ -180,6 +232,8 @@ app.post('/api/visits', need(), upload, (req, res) => {
   try { d = JSON.parse(req.body.data || '{}'); } catch { removeFiles(files); return res.status(400).json({ error: 'bad data' }); }
   const fail = (error) => { removeFiles(files); return res.status(400).json({ error }); };
   if (!d.uuid) return fail('uuid required');
+  // A visit queued on the phone in one mode is only accepted in that mode. 409: the outbox keeps it for later.
+  if (!!d.test !== req.test) { removeFiles(files); return res.status(409).json({ error: 'mode', test: req.test }); }
 
   const dup = db.prepare('SELECT id FROM visits WHERE uuid = ?').get(String(d.uuid));
   if (dup) {
@@ -239,7 +293,7 @@ app.post('/api/visits', need(), upload, (req, res) => {
     if (here && num(here.lat) != null && num(here.lng) != null) checkin(req.user.id, here.lat, here.lng, here.accuracy);
     db.exec('COMMIT');
     res.json({ id: visitId, level: override || result.level, repairs });
-    if (locationSource === 'address' && num(d.lat) == null) geocodePending();
+    if (locationSource === 'address' && num(d.lat) == null) geocodePending(req.dbx);
   } catch (e) {
     db.exec('ROLLBACK');
     removeFiles(files);
@@ -279,7 +333,7 @@ app.get('/api/visits/:id', need(), (req, res) => {
 app.get('/api/photos/:id', need(), (req, res) => {
   const p = db.prepare('SELECT p.*, v.created_by FROM photos p JOIN visits v ON v.id = p.visit_id WHERE p.id = ?').get(Number(req.params.id));
   if (!p || !access(req.user, { created_by: p.created_by })) return res.status(404).end();
-  res.sendFile(path.join(UPLOAD_DIR, path.basename(p.filename)));
+  res.sendFile(path.join(req.uploadDir, path.basename(p.filename)));
 });
 
 mountRepairs(app, { need, upload });
@@ -433,5 +487,6 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => console.log(`buuflood listening on :${PORT} (public URL ${PUBLIC_URL})`));
 
 // Approximate map positions for address-only visits: backfill at start, then retry failed lookups every 5 minutes.
-geocodePending();
-setInterval(geocodePending, 5 * 60 * 1000).unref();
+const geocodeAll = () => { geocodePending(prodDb); if (sandboxOpen()) geocodePending(sandboxDb()); };
+geocodeAll();
+setInterval(geocodeAll, 5 * 60 * 1000).unref();

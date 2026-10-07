@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { NEEDS, CATEGORIES, triage, ticketsFor, needsMentalScreening, LEVEL_LABELS } from '../../../shared/triage.js';
 import { contactError } from '../../../shared/contact.js';
 import { Section, Field, Check, LevelBadge } from '../components/ui.jsx';
-import { getPosition, compressPhoto, uuid } from '../lib/device.js';
+import { getPosition, uuid } from '../lib/device.js';
 import { enqueue } from '../lib/outbox.js';
 import { mapsLink, geocode } from '../lib/api.js';
 import PinPicker from '../components/PinPicker.jsx';
@@ -35,7 +35,6 @@ export default function NewVisit({ notify }) {
   const [showMap, setShowMap] = useState(false);
   const [finding, setFinding] = useState(false);
   const byAddress = v.location_source === 'address';
-  const [photos, setPhotos] = useState([]); // { blob, url }
   const [items, setItems] = useState([]);   // repair items, see RepairItems.jsx
   const [saving, setSaving] = useState(false);
 
@@ -55,15 +54,6 @@ export default function NewVisit({ notify }) {
   const level = v.override_level || result.level;
   const tickets = ticketsFor(result, v.override_level || null);
 
-  const addPhotos = async (files) => {
-    const added = [];
-    for (const f of files) {
-      try { const blob = await compressPhoto(f); added.push({ blob, url: URL.createObjectURL(blob) }); }
-      catch { notify('ไม่สามารถอ่านรูปภาพนี้ได้'); }
-    }
-    setPhotos((p) => [...p, ...added].slice(0, 10));
-  };
-
   const a = v.address;
   const mentalOn = needsMentalScreening(v.answers);
   const addressComplete = !!(a.tambon && a.amphoe && a.province && (a.house_no || a.moo));
@@ -80,11 +70,11 @@ export default function NewVisit({ notify }) {
     e.preventDefault();
     if (!v.answers.needs.length && !v.answers.other_need.trim() && !v.override_level) return notify('กรุณาเลือกความต้องการอย่างน้อย 1 ข้อ');
     if (v.override_level && !v.override_reason.trim()) return notify('กรุณาระบุเหตุผลที่ปรับระดับ');
-    if (mentalOn && !result.mental?.complete) return notify('กรุณาทำแบบคัดกรองสุขภาพใจให้ครบในข้อ 2');
+    if (mentalOn && !result.mental?.complete) return notify('กรุณาทำแบบคัดกรองสุขภาพใจให้ครบในข้อ 4');
     if (!v.first_name.trim() || !v.last_name.trim()) return notify('กรุณากรอกชื่อและนามสกุลของผู้ประสบภัย');
     const ce = contactError(v);
     if (ce) return notify(ce);
-    if (byAddress && !addressComplete) return notify('ใช้ที่อยู่ระบุตำแหน่ง: กรุณากรอกบ้านเลขที่หรือหมู่ ตำบล อำเภอ จังหวัด ในข้อ 4');
+    if (byAddress && !addressComplete) return notify('ใช้ที่อยู่ระบุตำแหน่ง: กรุณากรอกบ้านเลขที่หรือหมู่ ตำบล อำเภอ จังหวัด ในข้อ 3');
     const ip = itemsProblem(items);
     if (ip) return notify(ip);
     if (!byAddress && !pos && !confirm('ยังไม่มีตำแหน่ง GPS บันทึกต่อหรือไม่?')) return;
@@ -103,8 +93,7 @@ export default function NewVisit({ notify }) {
       visited_at: new Date().toISOString(),
       override_level: v.override_level || null,
     };
-    const saved = await enqueue(data, photos.map((p) => p.blob), Object.fromEntries(items.map((it) => [it.uuid, it.photos.map((p) => p.blob)])));
-    photos.forEach((p) => URL.revokeObjectURL(p.url));
+    const saved = await enqueue(data, [], Object.fromEntries(items.map((it) => [it.uuid, it.photos.map((p) => p.blob)])));
     items.forEach((it) => it.photos.forEach((p) => URL.revokeObjectURL(p.url)));
     setSaving(false);
     // The outbox may upload older queued visits in the same go: pick this one by its uuid.
@@ -112,7 +101,7 @@ export default function NewVisit({ notify }) {
     const mine = sent?.repairs?.length ? sent : null;
     notify(!sent ? 'บันทึกไว้ในเครื่องแล้ว จะส่งอัตโนมัติเมื่อมีสัญญาณ'
       : mine ? `บันทึกแล้ว เลขคิวซ่อม: ${mine.repairs.map((r) => r.queue).join(', ')}` : 'บันทึกและส่งแล้ว');
-    setV(blank()); setPhotos([]); setItems([]); setPin(null); setShowMap(false); setMapCenter(null); window.scrollTo(0, 0);
+    setV(blank()); setItems([]); setPin(null); setShowMap(false); setMapCenter(null); window.scrollTo(0, 0);
     // With repair items, open the visit so the volunteer can tell the owner the queue numbers.
     go(mine ? `/visit/${mine.id}` : '/visits');
   };
@@ -148,7 +137,7 @@ export default function NewVisit({ notify }) {
         {byAddress && (
           <div className="space-y-2">
             <p className={`text-sm ${addressComplete ? 'text-lvgreen' : 'text-lvred'}`}>
-              {addressComplete ? '✓ ที่อยู่ครบ ทีมจะนำทางด้วยที่อยู่นี้' : 'กรอกบ้านเลขที่หรือหมู่ ตำบล อำเภอ จังหวัด ในข้อ 4 ให้ครบ'}
+              {addressComplete ? '✓ ที่อยู่ครบ ทีมจะนำทางด้วยที่อยู่นี้' : 'กรอกบ้านเลขที่หรือหมู่ ตำบล อำเภอ จังหวัด ในข้อ 3 ให้ครบ'}
             </p>
             {!showMap ? (
               <button type="button" onClick={findOnMap} className="btn-ghost w-full">🗺️ ปักหมุดบ้านบนแผนที่ (ถ้าทราบ)</button>
@@ -166,7 +155,29 @@ export default function NewVisit({ notify }) {
         )}
       </Section>
 
-      <Section title="2. ความต้องการ" hint="ถามด้วยความเห็นอกเห็นใจ เลือกทุกข้อที่พบ">
+      <Section title="2. ผู้ประสบภัยและช่องทางติดต่อ" hint="แจ้งผู้ประสบภัยว่าข้อมูลใช้เพื่อประสานความช่วยเหลือเท่านั้น">
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="ชื่อ *"><input required value={v.first_name} onChange={(e) => set({ first_name: e.target.value })} /></Field>
+          <Field label="นามสกุล *"><input required value={v.last_name} onChange={(e) => set({ last_name: e.target.value })} /></Field>
+        </div>
+        <ContactFields v={v} set={set} />
+      </Section>
+
+      <Section title="3. ที่อยู่" hint={byAddress ? 'ไม่ได้พบที่บ้าน: ต้องกรอกบ้านเลขที่หรือหมู่ ตำบล อำเภอ จังหวัด เพื่อระบุตำแหน่งบ้าน' : null}>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label={byAddress ? 'บ้านเลขที่ *' : 'บ้านเลขที่'}><input required={byAddress && !a.moo} value={v.address.house_no} onChange={(e) => setAddr('house_no', e.target.value)} /></Field>
+          <Field label={byAddress ? 'หมู่ที่/ชุมชน *' : 'หมู่ที่/ชุมชน'}><input required={byAddress && !a.house_no} value={v.address.moo} onChange={(e) => setAddr('moo', e.target.value)} /></Field>
+          <Field label="หมู่บ้าน/คอนโด"><input value={v.address.village} onChange={(e) => setAddr('village', e.target.value)} /></Field>
+          <Field label="ชั้น"><input value={v.address.floor} onChange={(e) => setAddr('floor', e.target.value)} /></Field>
+          <Field label="ซอย"><input value={v.address.soi} onChange={(e) => setAddr('soi', e.target.value)} /></Field>
+          <Field label="ถนน"><input value={v.address.road} onChange={(e) => setAddr('road', e.target.value)} /></Field>
+          <Field label={byAddress ? 'ตำบล *' : 'ตำบล'}><input required={byAddress} value={v.address.tambon} onChange={(e) => setAddr('tambon', e.target.value)} /></Field>
+          <Field label={byAddress ? 'อำเภอ *' : 'อำเภอ'}><input required={byAddress} value={v.address.amphoe} onChange={(e) => setAddr('amphoe', e.target.value)} /></Field>
+          <Field label={byAddress ? 'จังหวัด *' : 'จังหวัด'} className="col-span-2"><input required={byAddress} value={v.address.province} onChange={(e) => setAddr('province', e.target.value)} /></Field>
+        </div>
+      </Section>
+
+      <Section title="4. ความต้องการ" hint="ถามด้วยความเห็นอกเห็นใจ เลือกทุกข้อที่พบ">
         {byCat.map(({ cat, list }) => (
           <div key={cat} className="space-y-2">
             <div className="font-semibold">{CATEGORIES[cat].icon} {CATEGORIES[cat].label}</div>
@@ -198,7 +209,7 @@ export default function NewVisit({ notify }) {
           <div className="text-sm text-golddark">ยังทำแบบคัดกรองสุขภาพใจไม่ครบ ระดับอาจเปลี่ยนเมื่อตอบครบ</div>
         )}
         {result.categories.mental?.level === 'red' && (
-          <div className="rounded-lg bg-lvred text-white p-2 text-sm font-bold">🚨 สุขภาพใจระดับแดง: โทรขอความช่วยเหลือทันที (เบอร์โทรอยู่ในข้อ 2)</div>
+          <div className="rounded-lg bg-lvred text-white p-2 text-sm font-bold">🚨 สุขภาพใจระดับแดง: โทรขอความช่วยเหลือทันที (เบอร์โทรอยู่ในข้อ 4)</div>
         )}
         {result.reasons.length > 0 && (
           <ul className="text-sm list-disc pl-5 text-neutral-600">{result.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
@@ -223,55 +234,11 @@ export default function NewVisit({ notify }) {
         </details>
       </section>
 
-      <Section title="3. ผู้ประสบภัยและช่องทางติดต่อ" hint="แจ้งผู้ประสบภัยว่าข้อมูลใช้เพื่อประสานความช่วยเหลือเท่านั้น">
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="ชื่อ *"><input required value={v.first_name} onChange={(e) => set({ first_name: e.target.value })} /></Field>
-          <Field label="นามสกุล *"><input required value={v.last_name} onChange={(e) => set({ last_name: e.target.value })} /></Field>
-        </div>
-        <ContactFields v={v} set={set} />
-      </Section>
-
-      <Section title="4. ที่อยู่">
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="บ้านเลขที่"><input value={v.address.house_no} onChange={(e) => setAddr('house_no', e.target.value)} /></Field>
-          <Field label="หมู่ที่/ชุมชน"><input value={v.address.moo} onChange={(e) => setAddr('moo', e.target.value)} /></Field>
-          <Field label="หมู่บ้าน/คอนโด"><input value={v.address.village} onChange={(e) => setAddr('village', e.target.value)} /></Field>
-          <Field label="ชั้น"><input value={v.address.floor} onChange={(e) => setAddr('floor', e.target.value)} /></Field>
-          <Field label="ซอย"><input value={v.address.soi} onChange={(e) => setAddr('soi', e.target.value)} /></Field>
-          <Field label="ถนน"><input value={v.address.road} onChange={(e) => setAddr('road', e.target.value)} /></Field>
-          <Field label="ตำบล"><input value={v.address.tambon} onChange={(e) => setAddr('tambon', e.target.value)} /></Field>
-          <Field label="อำเภอ"><input value={v.address.amphoe} onChange={(e) => setAddr('amphoe', e.target.value)} /></Field>
-          <Field label="จังหวัด" className="col-span-2"><input value={v.address.province} onChange={(e) => setAddr('province', e.target.value)} /></Field>
-        </div>
-      </Section>
-
       <Section title="5. สิ่งของที่ต้องซ่อม" hint="เช่น รถจักรยานยนต์ ตู้เย็น เครื่องซักผ้า โทรทัศน์ ต้องมีรูปถ่ายทุกชิ้น เลขคิวจะออกเมื่อส่งข้อมูลถึงระบบแล้ว">
         <RepairItems items={items} onChange={setItems} notify={notify} />
       </Section>
 
-      <Section title="6. รูปถ่ายบ้าน" hint="ความเสียหายของบ้าน (สูงสุด 10 รูป)">
-        {photos.length > 0 && (
-          <div className="grid grid-cols-3 gap-2">
-            {photos.map((p, i) => (
-              <div key={p.url} className="relative">
-                <img src={p.url} alt="" className="aspect-square w-full object-cover rounded-lg" />
-                <button type="button" onClick={() => setPhotos((ps) => ps.filter((_, j) => j !== i))}
-                  className="absolute top-1 right-1 w-7 h-7 rounded-full bg-black/60 text-white">✕</button>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="grid grid-cols-2 gap-2">
-          <label className="btn-gold cursor-pointer">📷 ถ่ายรูป
-            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { addPhotos([...e.target.files]); e.target.value = ''; }} />
-          </label>
-          <label className="btn-ghost cursor-pointer">🖼️ เลือกจากคลัง
-            <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { addPhotos([...e.target.files]); e.target.value = ''; }} />
-          </label>
-        </div>
-      </Section>
-
-      <Section title="7. หมายเหตุ">
+      <Section title="6. หมายเหตุ">
         <textarea rows={3} value={v.notes} onChange={(e) => set({ notes: e.target.value })} placeholder="ข้อสังเกตเพิ่มเติมสำหรับทีมผู้เชี่ยวชาญ" />
       </Section>
 

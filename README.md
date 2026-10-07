@@ -13,7 +13,7 @@ The UI is in Thai. It works on any phone, tablet or laptop browser.
 ## How it works
 
 ```
-Volunteer visits a house ──► needs + 2Q/9Q/8Q + GPS + photos ──► triage (red / yellow / green)
+Volunteer visits a house ──► needs + 2Q/9Q/8Q + GPS/address ──► triage (red / yellow / green)
                                                                     │
      ┌──────────────────────────────────────────────────────────────┼────────────────────────┐
      ▼                                                              ▼                        ▼
@@ -30,7 +30,7 @@ Volunteer visits a house ──► needs + 2Q/9Q/8Q + GPS + photos ──► tri
 | `responder` + one or more specialties | Tickets in their specialties only; claim, update, close, navigate |
 | `fixer` | Fixing Centre: walk-in registration, item status, report and CSV |
 | `office` | All visits, supply and other tickets, every red ticket, dashboard, Fixing Centre |
-| `admin` | Everything, plus assigning roles |
+| `admin` | Everything, plus assigning roles and a test mode |
 
 - **Sign-in:** Google, limited to `@go.buu.ac.th` and `@eng.buu.ac.th` (`ALLOWED_DOMAINS`).
 - **Triage rules:** `shared/triage.js` — shared by the phone (live preview) and the server.
@@ -46,6 +46,9 @@ Volunteer visits a house ──► needs + 2Q/9Q/8Q + GPS + photos ──► tri
   the centre. The queue number is the type prefix plus a running number per type (`shared/repairs.js`), issued by
   the server, so a visit saved offline gets its numbers when it uploads. The report groups items by type in queue
   order with the owner's contacts; print it or download CSV.
+- **Test mode (admins):** ⋯ menu → 🧪 โหมดทดสอบ. Everything done meanwhile goes to a separate sandbox database
+  (`DATA_DIR/sandbox/`), never to the real data, with a role picker to try each role and a reset button. It switches
+  itself off after 8 hours.
 
 ## Personal data (PDPA)
 

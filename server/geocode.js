@@ -1,7 +1,7 @@
 // Approximate positions for visits recorded by address (met away from home, no map pin).
 // Uses OpenStreetMap Nominatim: at most 1 request per second, with an identifying User-Agent.
 // Only the village, tambon, amphoe and province are sent, never the house number or the villager's name.
-import { db, json } from './db.js';
+import { json } from './db.js';
 
 const UA = `buuflood (Burapha University flood recovery; ${process.env.PUBLIC_URL || 'local'})`;
 const cache = new Map(); // query -> Nominatim hits, for the life of the process
@@ -40,26 +40,30 @@ async function locate(a = {}) {
   return { lat: null, lng: null, level: 'none' };
 }
 
-let running = false, again = false;
+// One sweep at a time per database (production, and the admin test-mode sandbox when it is open).
+const state = new WeakMap(); // db -> { running, again }
 
-/** Look up every address-mode visit without a pin that has not been looked up yet. Safe to call often. */
-export async function geocodePending() {
-  if (running) { again = true; return; }
-  running = true;
-  again = false;
+/** Look up every address-mode visit without a pin in database `d` that has not been looked up yet. Safe to call often. */
+export async function geocodePending(d) {
+  const st = state.get(d) || { running: false, again: false };
+  state.set(d, st);
+  if (st.running) { st.again = true; return; }
+  st.running = true;
+  st.again = false;
   try {
-    const rows = db.prepare(`SELECT id, address FROM visits
+    const rows = d.prepare(`SELECT id, address FROM visits
       WHERE location_source = 'address' AND lat IS NULL AND geocoded_at IS NULL ORDER BY id`).all();
-    const save = db.prepare(`UPDATE visits SET approx_lat = ?, approx_lng = ?, approx_level = ?, geocoded_at = datetime('now') WHERE id = ?`);
+    const save = d.prepare(`UPDATE visits SET approx_lat = ?, approx_lng = ?, approx_level = ?, geocoded_at = datetime('now') WHERE id = ?`);
     for (const v of rows) {
       const p = await locate(json(v.address, {}));
+      if (!d.isOpen) return; // the sandbox was reset meanwhile
       save.run(p.lat, p.lng, p.level, v.id);
     }
   } catch (e) {
     console.warn(`geocode: ${e.message} (will retry)`);
-    again = false; // stop after an error; the periodic sweep retries
+    st.again = false; // stop after an error; the periodic sweep retries
   } finally {
-    running = false;
-    if (again) geocodePending();
+    st.running = false;
+    if (st.again) geocodePending(d);
   }
 }
