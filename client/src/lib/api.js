@@ -7,6 +7,7 @@ export class ApiError extends Error {
 // answers 409 when it differs (e.g. test mode expired), and the app reloads the mode instead of saving.
 let testMode = null;
 export const setTestMode = (on) => { testMode = on; };
+export const isTestMode = () => !!testMode;
 export const MODE_CHANGED = 'buuflood:mode';
 
 export async function api(path, { method = 'GET', body } = {}) {

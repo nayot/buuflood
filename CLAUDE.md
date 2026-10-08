@@ -20,6 +20,13 @@ User-facing documentation is in README.md; this file covers conventions only.
   so uploads use `req.uploadDir` and the wrapped `upload`. Never prepare statements at module level. Guards against
   cross-mode writes: the outbox keeps a separate `outbox-test` key and every queued visit carries `test`; mutating API
   calls send `X-Test-Mode`; the server answers 409 on a mismatch, which the outbox treats as "keep".
+- **LINE referral** (`server/line.js`, `shared/line.js`, `components/LineReferral.jsx`): yellow mental results only, with
+  consent. Codes `BF-XXXXX` (`BT-` in test mode, which the webhook uses to pick the sandbox; it has no session). The form
+  registers the code at once (`POST api/line-referrals`, the server rescores the answers); the saved visit is
+  authoritative. Webhook `/line/webhook` (outside `/api`, signature over `req.rawBody`) replies with welcome + brief, or
+  welcome only and pushes the brief when the visit arrives (push needs the villager to be a friend). Never resend once
+  `status = sent`. The mental ticket closes as `referred` only when the villager has sent the code. Contacts and the
+  LINE user id are stored encrypted; the brief is rendered at send time. `LINE_API_BASE` points tests at a mock.
 - **Purging data:** `scripts/purge.js --all --yes` or `--older-than N` deletes visits (tickets, updates and photo rows
   cascade), photo files and (with `--all`) check-ins, and keeps users. In Docker: `docker compose exec app node scripts/purge.js …`.
 - **Specialties:** `users.specialty` is a comma-separated list (`electrical,structural`). Always read it through

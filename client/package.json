@@ -1,7 +1,7 @@
 {
   "name": "buuflood-client",
   "private": true,
-  "version": "2.1.0",
+  "version": "2.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,6 +12,7 @@
     "idb-keyval": "^6.3.0",
     "leaflet": "^1.9.4",
     "marked": "^18.1.0",
+    "qrcode-generator": "^2.0.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-leaflet": "^5.0.0"

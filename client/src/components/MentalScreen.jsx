@@ -1,6 +1,7 @@
 import { Q2, Q9, Q9_SCALE, Q8, Q8_CONTROL, MENTAL_ADVICE, scoreMental } from '../../../shared/mental.js';
 import { LevelBadge } from './ui.jsx';
 import EmergencyPanel from './Emergency.jsx';
+import LineReferral from './LineReferral.jsx';
 
 export const blankMental = () => ({ q2: [null, null], q9: Array(9).fill(null), q8: Array(8).fill(null), q8_control: null });
 
@@ -25,8 +26,9 @@ const Q = ({ n, children, done }) => (
  * 2Q → 9Q → 8Q of the Department of Mental Health. Each step appears only when the previous one calls for it.
  * Read each question exactly as written, one at a time; repeat it if not understood, without explaining it.
  * `crisis`: the volunteer ticked m_crisis, which is red whatever the screening says, so the call panel shows at once.
+ * `line`: { oa, value, onChange, register } for the LINE referral offered with a yellow result (null when LINE is off).
  */
-export default function MentalScreen({ value, onChange, crisis = false }) {
+export default function MentalScreen({ value, onChange, crisis = false, line = null }) {
   const m = value || blankMental();
   const r = scoreMental(m);
   const set = (k, i, v) => onChange({ ...m, [k]: m[k].map((x, j) => (j === i ? v : x)) });
@@ -96,6 +98,7 @@ export default function MentalScreen({ value, onChange, crisis = false }) {
           {level === 'red'
             ? !crisis && <EmergencyPanel advice={MENTAL_ADVICE.red} />
             : <p className={`text-sm rounded-lg p-2 ${level === 'yellow' ? 'bg-goldpale' : 'bg-green-50'}`}>{MENTAL_ADVICE[level]}</p>}
+          {level === 'yellow' && line?.oa && <LineReferral {...line} />}
         </div>
       ) : (
         <p className="text-sm text-golddark">ตอบให้ครบทุกข้อที่แสดงจึงจะบันทึกได้</p>

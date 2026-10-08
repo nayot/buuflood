@@ -46,6 +46,10 @@ Volunteer visits a house ──► needs + 2Q/9Q/8Q + GPS/address ──► tria
   the centre. The queue number is the type prefix plus a running number per type (`shared/repairs.js`), issued by
   the server, so a visit saved offline gets its numbers when it uploads. The report groups items by type in queue
   order with the owner's contacts; print it or download CSV.
+- **LINE referral:** a yellow mental-health result can be handed over to the BUU Flood Help LINE Official Account. The
+  villager scans a QR code that opens the chat with a referral code; the bot replies there with a welcome and a brief
+  for the professional who takes over in LINE OA Manager. Needs `LINE_OA_ID`, `LINE_CHANNEL_SECRET` and
+  `LINE_CHANNEL_ACCESS_TOKEN`, and the webhook `${PUBLIC_URL}/line/webhook`.
 - **Test mode (admins):** ⋯ menu → 🧪 โหมดทดสอบ. Everything done meanwhile goes to a separate sandbox database
   (`DATA_DIR/sandbox/`), never to the real data, with a role picker to try each role and a reset button. It switches
   itself off after 8 hours.

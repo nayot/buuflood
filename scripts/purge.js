@@ -1,4 +1,4 @@
-// Delete household data (visits, tickets, photos, repair items, check-ins) for PDPA retention.
+// Delete household data (visits, tickets, photos, repair items, LINE referrals, check-ins) for PDPA retention.
 //   npm run purge -- --older-than 90     delete visits older than 90 days
 //   npm run purge -- --all --yes         delete everything except user accounts
 // In Docker (1.0.2+): docker compose exec app node scripts/purge.js --older-than 90
@@ -36,6 +36,8 @@ db.exec('BEGIN');
 db.prepare(`DELETE FROM repair_items WHERE ${itemWhere}`).run(); // repair photo and update rows cascade
 db.prepare(`DELETE FROM visits WHERE ${where}`).run(); // tickets, updates and photo rows cascade
 if (all) db.exec('DELETE FROM checkins');
+// LINE referrals go with their visit (cascade); those whose visit never arrived go by their own date.
+db.prepare(`DELETE FROM line_referrals WHERE visit_id IS NULL AND ${where}`).run();
 db.exec('COMMIT');
 
 for (const p of photos) fs.rmSync(path.join(UPLOAD_DIR, path.basename(p.filename)), { force: true });

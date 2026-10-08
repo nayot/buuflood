@@ -4,7 +4,7 @@ import { contactError } from '../../../shared/contact.js';
 import { Section, Field, Check, LevelBadge } from '../components/ui.jsx';
 import { getPosition, uuid } from '../lib/device.js';
 import { enqueue } from '../lib/outbox.js';
-import { mapsLink, geocode } from '../lib/api.js';
+import { api, mapsLink, geocode } from '../lib/api.js';
 import PinPicker from '../components/PinPicker.jsx';
 import MentalScreen, { blankMental } from '../components/MentalScreen.jsx';
 import ContactFields from '../components/ContactFields.jsx';
@@ -21,11 +21,12 @@ const blank = () => ({
   first_name: '', last_name: '', phone: '', line: '', email: '', no_contact: false,
   address: { house_no: '', floor: '', soi: '', road: '', ...loadArea() },
   answers: { needs: [], cannot_travel: false, other_need: '', mental: blankMental() },
+  line_referral: null, // { code, consent }: yellow mental result handed over to the BUU Flood Help LINE OA
   override_level: '', override_reason: '',
   notes: '',
 });
 
-export default function NewVisit({ notify }) {
+export default function NewVisit({ me, notify }) {
   const [v, setV] = useState(blank);
   const [pos, setPos] = useState(null);
   const [posErr, setPosErr] = useState(null);
@@ -57,6 +58,11 @@ export default function NewVisit({ notify }) {
   const a = v.address;
   const mentalOn = needsMentalScreening(v.answers);
   const addressComplete = !!(a.tambon && a.amphoe && a.province && (a.house_no || a.moo));
+  // LINE referral: offered for a yellow screening result (not with a crisis tick) when the server has LINE set up.
+  const lineOffered = !!me?.line_oa && mentalOn && result.mental?.complete && result.mental.level === 'yellow' && !v.answers.needs.includes('m_crisis');
+  const registerReferral = (code) => api('api/line-referrals', { method: 'POST', body: {
+    code, consent: true, visit_uuid: v.uuid, first_name: v.first_name, last_name: v.last_name, phone: v.phone, line: v.line,
+    address: v.address, mental: v.answers.mental } });
 
   const findOnMap = async () => {
     setShowMap(true); setFinding(true);
@@ -71,6 +77,7 @@ export default function NewVisit({ notify }) {
     if (!v.answers.needs.length && !v.answers.other_need.trim() && !v.override_level) return notify('กรุณาเลือกความต้องการอย่างน้อย 1 ข้อ');
     if (v.override_level && !v.override_reason.trim()) return notify('กรุณาระบุเหตุผลที่ปรับระดับ');
     if (mentalOn && !result.mental?.complete) return notify('กรุณาทำแบบคัดกรองสุขภาพใจให้ครบในข้อ 4');
+    if (lineOffered && v.line_referral && !v.line_referral.consent) return notify('ส่งต่อทาง LINE: ติ๊กความยินยอมของผู้ประสบภัย หรือยกเลิกการส่งต่อ');
     if (!v.first_name.trim() || !v.last_name.trim()) return notify('กรุณากรอกชื่อและนามสกุลของผู้ประสบภัย');
     const ce = contactError(v);
     if (ce) return notify(ce);
@@ -86,6 +93,7 @@ export default function NewVisit({ notify }) {
     const data = {
       ...v,
       answers: mentalOn ? { ...answers, mental } : answers,
+      line_referral: lineOffered && v.line_referral?.consent ? { code: v.line_referral.code, consent: true } : null,
       items: itemsPayload(items),
       // House position: GPS at the house, or the map pin (or none) when located by address.
       ...(byAddress ? { lat: pin?.lat ?? null, lng: pin?.lng ?? null, accuracy: null } : (pos || {})),
@@ -187,7 +195,8 @@ export default function NewVisit({ notify }) {
               </Check>
             ))}
             {cat === 'mental' && mentalOn && (
-              <MentalScreen value={v.answers.mental} onChange={(mental) => setAns({ mental })} crisis={v.answers.needs.includes('m_crisis')} />
+              <MentalScreen value={v.answers.mental} onChange={(mental) => setAns({ mental })} crisis={v.answers.needs.includes('m_crisis')}
+                line={me?.line_oa ? { oa: me.line_oa, value: v.line_referral, onChange: (r) => set({ line_referral: r }), register: registerReferral } : null} />
             )}
           </div>
         ))}

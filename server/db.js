@@ -154,6 +154,26 @@ function migrate(d) {
 
   CREATE INDEX IF NOT EXISTS idx_repair_visit ON repair_items(visit_id);
   `);
+
+  // Mental-health referrals to the BUU Flood Help LINE OA (server/line.js). A row can exist before its visit (registered
+  // from the form, or the villager sent the code first); visit_id is filled in when the visit is uploaded.
+  d.exec(`
+  CREATE TABLE IF NOT EXISTS line_referrals (
+    code TEXT PRIMARY KEY,                        -- BF-XXXXX (BT- in test mode)
+    created_by INTEGER REFERENCES users(id),
+    visit_id INTEGER REFERENCES visits(id) ON DELETE CASCADE,
+    visit_uuid TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    first_name TEXT, last_name TEXT, phone_enc TEXT, line_enc TEXT,
+    area TEXT,                                    -- JSON: house_no, moo, village, tambon, amphoe, province
+    mental TEXT,                                  -- JSON: level, summary, q9, q8
+    line_user_enc TEXT,                           -- the villager's LINE user id, encrypted
+    status TEXT NOT NULL DEFAULT 'waiting',       -- waiting | linked | sent | failed
+    error TEXT, linked_at TEXT, sent_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_line_visit ON line_referrals(visit_id);
+  `);
 }
 
 export const prodDb = openDb(DATA_DIR);

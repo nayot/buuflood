@@ -13,6 +13,8 @@ import { db, prodDb, json, withDb, uploadDir, sandboxDb, sandboxOpen, syncSandbo
 import { encrypt, decrypt } from './crypto.js';
 import { geocodePending } from './geocode.js';
 import { mountRepairs, insertItems, itemsError, itemsOfVisit, removeFiles } from './repairs.js';
+import { mountLine, lineEnabled, LINE_OA, upsertReferral, mentalOf, markReferred, deliver, referralOfVisit } from './line.js';
+import { parseCode } from '../shared/line.js';
 import { triage, ticketsFor, needsMentalScreening, CATEGORIES, LEVELS, TICKET_STATUS, NEEDS, parseSpecialties } from '../shared/triage.js';
 import { cleanMental } from '../shared/mental.js';
 import { contactError, cleanPhone, cleanLine, cleanEmail } from '../shared/contact.js';
@@ -39,7 +41,7 @@ const oauth = new OAuth2Client(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_
 const app = express();
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '1mb', verify: (req, res, buf) => { req.rawBody = buf; } })); // raw body: LINE webhook signature
 app.use(cookieSession({
   name: 'buuflood',
   secret: process.env.SESSION_SECRET,
@@ -143,7 +145,8 @@ const need = (...roles) => (req, res, next) => {
 app.get('/api/me', (req, res) => {
   if (!req.user) return res.json({ user: null, devAuth: DEV_AUTH });
   const { id, email, name, picture, role, specialty } = req.user;
-  res.json({ user: { id, email, name, picture, role, specialty, specialties: parseSpecialties(specialty), realRole: req.prodUser.role },
+  res.json({ user: { id, email, name, picture, role, specialty, specialties: parseSpecialties(specialty), realRole: req.prodUser.role,
+    line_oa: lineEnabled ? LINE_OA : null },
     test: req.test ? { until: req.session.testUntil } : null, emergency: EMERGENCY });
 });
 
@@ -263,6 +266,15 @@ app.post('/api/visits', need(), upload, (req, res) => {
   if (itemErr) return fail(itemErr);
   const housePhotos = files.filter((f) => f.fieldname === 'photos');
   if (housePhotos.length > PHOTOS_MAX) return fail('too many photos');
+  // LINE referral: only for a yellow mental result with the villager's consent. A referral ticked before the answers
+  // changed the level is dropped, not rejected.
+  let referral = null;
+  if (d.line_referral && lineEnabled && result.mental?.complete && result.mental.level === 'yellow' && !answers.needs.includes('m_crisis')) {
+    const code = parseCode(d.line_referral.code);
+    if (!code || code !== d.line_referral.code || code.startsWith('BT-') !== req.test) return fail('line code');
+    if (d.line_referral.consent !== true) return fail('line consent');
+    referral = code;
+  }
 
   const a = d.address || {};
   const address = Object.fromEntries(['house_no', 'village', 'floor', 'moo', 'soi', 'road', 'tambon', 'amphoe', 'province'].map((k) => [k, str(a[k], 100)]));
@@ -287,16 +299,27 @@ app.post('/api/visits', need(), upload, (req, res) => {
     for (const f of housePhotos) insP.run(visitId, f.filename);
     const repairs = insertItems({ items, files, visitId, userId: req.user.id,
       owner: { name, phone: d.phone, line: d.line, email: d.email, area: address } });
+    if (referral) {
+      const err = upsertReferral(db, { code: referral, userId: req.user.id, visitId, visitUuid: String(d.uuid),
+        person: { ...d, address }, mental: mentalOf(result.mental) });
+      if (err) throw Object.assign(new Error(err), { status: 400 });
+      const t = db.prepare("SELECT id FROM tickets WHERE visit_id = ? AND category = 'mental'").get(visitId);
+      if (t) db.prepare('INSERT INTO ticket_updates (ticket_id, user_id, status, note) VALUES (?, ?, ?, ?)').run(t.id, req.user.id, 'open',
+        `ส่งต่อ BUU Flood Help (LINE) รหัส ${referral}: รอผู้ประสบภัยส่งรหัสทาง LINE เมื่อเข้าแชทแล้วงานนี้จะปิดเป็น "ส่งต่อ"`);
+      markReferred(db, referral); // the villager may have sent the code already
+    }
 
     // Safety check-in uses where the volunteer is, which differs from the house when met elsewhere.
     const here = d.here || (locationSource === 'gps' ? d : null);
     if (here && num(here.lat) != null && num(here.lng) != null) checkin(req.user.id, here.lat, here.lng, here.accuracy);
     db.exec('COMMIT');
     res.json({ id: visitId, level: override || result.level, repairs });
+    if (referral) deliver(req.dbx, referral);
     if (locationSource === 'address' && num(d.lat) == null) geocodePending(req.dbx);
   } catch (e) {
     db.exec('ROLLBACK');
     removeFiles(files);
+    if (e.status === 400) return res.status(400).json({ error: e.message });
     console.error(e);
     res.status(500).json({ error: 'save failed' });
   }
@@ -327,6 +350,7 @@ app.get('/api/visits/:id', need(), (req, res) => {
   out.tickets = db.prepare(`SELECT t.*, u.name AS assignee_name FROM tickets t LEFT JOIN users u ON u.id = t.assignee_id WHERE visit_id = ?`).all(v.id);
   out.repairs = itemsOfVisit(v.id);
   out.creator = db.prepare('SELECT name, email FROM users WHERE id = ?').get(v.created_by);
+  out.line_referral = seesMentalDetail(req.user, v) ? referralOfVisit(db, v.id) : null;
   res.json(out);
 });
 
@@ -337,6 +361,7 @@ app.get('/api/photos/:id', need(), (req, res) => {
 });
 
 mountRepairs(app, { need, upload });
+mountLine(app, { need });
 
 // ---------------------------------------------------------------- tickets
 

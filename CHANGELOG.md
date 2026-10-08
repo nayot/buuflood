@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.2.0 — 2026-10-08
+
+- **LINE referral for yellow mental-health results.** With the villager's consent, the volunteer can hand them over to
+  the BUU Flood Help LINE Official Account: the screen shows a QR code that opens the OA chat with a referral code
+  (BF-XXXXX) typed in, and the villager presses send. The bot replies in that chat with a welcome (1323 / 1669 first)
+  and a brief for the professional: name, contact, area, screening level and 9Q/8Q scores, volunteer and time.
+  - The code is registered as soon as the volunteer ticks consent, so the bot can answer the moment it arrives (a
+    reply, which also works before the villager adds the OA). With no signal, the bot welcomes the villager and pushes
+    the brief when the visit is uploaded. A brief is never sent twice.
+  - The สุขภาพใจ ticket closes as "ส่งต่อ" once the villager has sent the code; until then it stays open for the field
+    team. The visit page shows the referral status.
+  - Webhook `/line/webhook` with signature check. New settings: `LINE_OA_ID`, `LINE_CHANNEL_SECRET`,
+    `LINE_CHANNEL_ACCESS_TOKEN` (the option is hidden until all three are set). Test-mode codes are BT- and stay in the
+    sandbox. Contacts and the LINE user id are stored encrypted; `purge.js` removes referrals.
+- User guide: how to hand a villager over to LINE.
+
 ## 2.1.0 — 2026-10-08
 
 - **Admin test mode (โหมดทดสอบ):** admins can switch it on in the ⋯ menu to rehearse or demonstrate the app without

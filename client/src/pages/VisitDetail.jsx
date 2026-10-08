@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, addressLine, navLink, placeLink, canLocate, timeAgo } from '../lib/api.js';
 import { NEEDS, CATEGORIES, TICKET_STATUS } from '../../../shared/triage.js';
 import { Q2, Q9, Q9_SCALE, Q8, Q8_CONTROL, MENTAL_ADVICE } from '../../../shared/mental.js';
+import { REFERRAL_STATUS } from '../../../shared/line.js';
 import { REPAIR_STATUS } from '../../../shared/repairs.js';
 import { LevelBadge, Empty, Section } from '../components/ui.jsx';
 import EmergencyPanel from '../components/Emergency.jsx';
@@ -102,6 +103,12 @@ export default function VisitDetail({ id }) {
           {lvl === 'red'
             ? <EmergencyPanel advice={MENTAL_ADVICE.red} />
             : lvl && <p className="text-sm text-neutral-600">{MENTAL_ADVICE[lvl]}</p>}
+          {v.line_referral && (
+            <div className={`text-sm rounded-lg p-2 ${v.line_referral.status === 'sent' ? 'bg-green-50' : v.line_referral.status === 'failed' ? 'bg-red-50' : 'bg-goldpale'}`}>
+              💬 ส่งต่อ BUU Flood Help (LINE) รหัส <b>{v.line_referral.code}</b>: {REFERRAL_STATUS[v.line_referral.status] || v.line_referral.status}
+              {v.line_referral.status === 'failed' && <div className="text-xs text-neutral-500">ผู้ประสบภัยอาจยังไม่ได้เพิ่มเพื่อน ให้ทีมสุขภาพใจติดต่อทางโทรศัพท์แทน</div>}
+            </div>
+          )}
           {v.answers.mental && <MentalAnswers m={v.answers.mental} />}
         </Section>
         );
