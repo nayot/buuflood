@@ -114,8 +114,30 @@ export default function VisitDetail({ id }) {
         );
       })()}
 
+      {v.repair_needs?.length > 0 && (
+        <Section title={`🔧 สิ่งของที่ต้องซ่อม (${v.repair_needs.length})`} hint="สำรวจความต้องการ ยังไม่มีเลขคิว เจ้าของต้องนำสิ่งของไปลงทะเบียนรับคิวที่ศูนย์ซ่อมด้วยตนเอง">
+          {v.repair_needs.map((n) => (
+            <div key={n.uuid} className="rounded-xl border border-neutral-200 p-2 space-y-2">
+              <div className="text-sm">
+                <b>{n.type_label}{n.type_other ? ` (${n.type_other})` : ''}</b>{n.brand ? ` · ${n.brand}` : ''}
+                {n.problem && <div className="text-neutral-600">{n.problem}</div>}
+              </div>
+              {n.photos.length > 0 && (
+                <div className="grid grid-cols-4 gap-2">
+                  {n.photos.map((p) => (
+                    <a key={p} href={`api/photos/${p}`} target="_blank" rel="noreferrer">
+                      <img src={`api/photos/${p}`} alt="" loading="lazy" className="aspect-square w-full object-cover rounded-lg" />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </Section>
+      )}
+
       {v.repairs?.length > 0 && (
-        <Section title={`🔧 สิ่งของที่ต้องซ่อม (${v.repairs.length})`} hint="แจ้งเลขคิวให้เจ้าของใช้ติดตามที่ศูนย์ซ่อม">
+        <Section title={`🔧 ลงทะเบียนศูนย์ซ่อม (${v.repairs.length})`} hint="บันทึกจากรุ่นก่อน 2.3 ที่ออกเลขคิวจากการเยี่ยมบ้าน">
           {v.repairs.map((r) => (
             <a key={r.id} href={`#/repair/${r.id}`} className="flex items-center gap-3 rounded-xl border border-neutral-200 p-2">
               {r.photos[0] && <img src={`api/repair-photos/${r.photos[0]}`} alt="" className="w-14 h-14 object-cover rounded-lg" />}

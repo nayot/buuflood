@@ -12,13 +12,13 @@ import { fileURLToPath } from 'node:url';
 import { db, prodDb, json, withDb, uploadDir, sandboxDb, sandboxOpen, syncSandboxUsers, resetSandbox } from './db.js';
 import { encrypt, decrypt } from './crypto.js';
 import { geocodePending } from './geocode.js';
-import { mountRepairs, insertItems, itemsError, itemsOfVisit, removeFiles } from './repairs.js';
+import { mountRepairs, itemsError, itemsOfVisit, removeFiles } from './repairs.js';
 import { mountLine, lineEnabled, LINE_OA, upsertReferral, mentalOf, markReferred, deliver, referralOfVisit } from './line.js';
 import { parseCode } from '../shared/line.js';
 import { triage, ticketsFor, needsMentalScreening, CATEGORIES, LEVELS, TICKET_STATUS, NEEDS, parseSpecialties } from '../shared/triage.js';
 import { cleanMental } from '../shared/mental.js';
 import { contactError, cleanPhone, cleanLine, cleanEmail } from '../shared/contact.js';
-import { ITEMS_MAX, ITEM_PHOTOS_MAX, queueNo } from '../shared/repairs.js';
+import { ITEMS_MAX, ITEM_PHOTOS_MAX, REPAIR_TYPES, queueNo } from '../shared/repairs.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROD = process.env.NODE_ENV === 'production';
@@ -180,7 +180,7 @@ app.post('/api/test-mode/reset', realAdmin, (req, res) => {
 
 // ---------------------------------------------------------------- visits
 
-// Photos of the house come as "photos"; photos of each repair item as "item_<item uuid>".
+// Photos of the house come as "photos" (old clients); photos of each item to repair as "item_<item uuid>".
 const PHOTOS_MAX = 10;
 const rawUpload = multer({
   storage: multer.diskStorage({
@@ -195,6 +195,9 @@ const upload = (req, res, next) => rawUpload(req, res, (err) => withDb(req.dbx, 
 
 const str = (v, max = 200) => (v == null || v === '' ? null : String(v).slice(0, max));
 const num = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
+/** Items to repair from the visit form, as stored in visits.repair_needs (already checked by itemsError). */
+const needsOf = (items) => items.map((it) => ({ uuid: String(it.uuid), type: it.type,
+  type_other: it.type === 'OT' ? str(it.type_other, 100) : null, brand: str(it.brand, 100), problem: str(it.problem, 500) }));
 
 // Who may see a visit, and how much of it.
 function access(user, visit) {
@@ -284,21 +287,24 @@ app.post('/api/visits', need(), upload, (req, res) => {
   try {
     const visitId = Number(db.prepare(`INSERT INTO visits
       (uuid, created_by, visited_at, lat, lng, accuracy, first_name, last_name, phone_enc, line_enc, email_enc, no_contact,
-       address, answers, triage_level, triage, override_level, override_reason, notes, location_source)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+       address, answers, triage_level, triage, override_level, override_reason, notes, location_source, repair_needs)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       String(d.uuid), req.user.id, str(d.visited_at, 40), num(d.lat), num(d.lng), num(d.accuracy),
       str(d.first_name, 100), str(d.last_name, 100),
       encrypt(cleanPhone(d.phone)), encrypt(cleanLine(d.line)), encrypt(cleanEmail(d.email)), d.no_contact ? 1 : 0,
       JSON.stringify(address), JSON.stringify(answers), result.level, JSON.stringify(result), override,
-      str(d.override_reason, 500), str(d.notes, 1000), locationSource,
+      str(d.override_reason, 500), str(d.notes, 1000), locationSource, items.length ? JSON.stringify(needsOf(items)) : null,
     ).lastInsertRowid);
 
     const insT = db.prepare('INSERT INTO tickets (visit_id, category, level) VALUES (?, ?, ?)');
     for (const t of ticketsFor(result, override)) insT.run(visitId, t.category, t.level);
     const insP = db.prepare('INSERT INTO photos (visit_id, filename) VALUES (?, ?)');
     for (const f of housePhotos) insP.run(visitId, f.filename);
-    const repairs = insertItems({ items, files, visitId, userId: req.user.id,
-      owner: { name, phone: d.phone, line: d.line, email: d.email, area: address } });
+    // Items to repair are a record of needs only: no queue number, the owner registers at the Fixing Centre.
+    const insI = db.prepare('INSERT INTO photos (visit_id, filename, item_uuid) VALUES (?, ?, ?)');
+    for (const it of items) {
+      for (const f of files.filter((x) => x.fieldname === `item_${it.uuid}`)) insI.run(visitId, f.filename, String(it.uuid));
+    }
     if (referral) {
       const err = upsertReferral(db, { code: referral, userId: req.user.id, visitId, visitUuid: String(d.uuid),
         person: { ...d, address }, mental: mentalOf(result.mental) });
@@ -313,7 +319,7 @@ app.post('/api/visits', need(), upload, (req, res) => {
     const here = d.here || (locationSource === 'gps' ? d : null);
     if (here && num(here.lat) != null && num(here.lng) != null) checkin(req.user.id, here.lat, here.lng, here.accuracy);
     db.exec('COMMIT');
-    res.json({ id: visitId, level: override || result.level, repairs });
+    res.json({ id: visitId, level: override || result.level, repairs: [], repair_needs: items.length });
     if (referral) deliver(req.dbx, referral);
     if (locationSource === 'address' && num(d.lat) == null) geocodePending(req.dbx);
   } catch (e) {
@@ -331,11 +337,12 @@ app.get('/api/visits', need(), (req, res) => {
     ? db.prepare('SELECT * FROM visits WHERE created_by = ? ORDER BY id DESC LIMIT 200').all(req.user.id)
     : db.prepare('SELECT * FROM visits ORDER BY id DESC LIMIT 500').all();
   const queues = db.prepare('SELECT type, seq FROM repair_items WHERE visit_id = ? ORDER BY id');
+  const needLabels = (v) => json(v.repair_needs, []).map((n) => (n.type === 'OT' && n.type_other) || REPAIR_TYPES[n.type] || n.type);
   res.json(rows.map((v) => {
     const s = serializeVisit(v, req.user);
     return { id: s.id, created_at: s.created_at, level: s.level, name: `${s.first_name || ''} ${s.last_name || ''}`.trim(),
       address: s.address, needs: s.answers.needs, tickets: ticketSummary(v.id),
-      repairs: queues.all(v.id).map((r) => queueNo(r.type, r.seq)) };
+      repairs: queues.all(v.id).map((r) => queueNo(r.type, r.seq)), repair_needs: needLabels(v) };
   }));
 });
 
@@ -346,7 +353,10 @@ app.get('/api/visits/:id', need(), (req, res) => {
   const v = db.prepare('SELECT * FROM visits WHERE id = ?').get(Number(req.params.id));
   if (!access(req.user, v)) return res.status(404).json({ error: 'not found' });
   const out = serializeVisit(v, req.user);
-  out.photos = db.prepare('SELECT id FROM photos WHERE visit_id = ?').all(v.id).map((p) => p.id);
+  out.photos = db.prepare('SELECT id FROM photos WHERE visit_id = ? AND item_uuid IS NULL').all(v.id).map((p) => p.id);
+  const itemPhotos = db.prepare('SELECT id FROM photos WHERE visit_id = ? AND item_uuid = ? ORDER BY id');
+  out.repair_needs = json(v.repair_needs, []).map((n) => ({ ...n, type_label: REPAIR_TYPES[n.type] || n.type,
+    photos: itemPhotos.all(v.id, n.uuid).map((p) => p.id) }));
   out.tickets = db.prepare(`SELECT t.*, u.name AS assignee_name FROM tickets t LEFT JOIN users u ON u.id = t.assignee_id WHERE visit_id = ?`).all(v.id);
   out.repairs = itemsOfVisit(v.id);
   out.creator = db.prepare('SELECT name, email FROM users WHERE id = ?').get(v.created_by);

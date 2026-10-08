@@ -39,7 +39,7 @@ User-facing documentation is in README.md; this file covers conventions only.
   Address-only visits get `approx_lat`/`approx_lng`/`approx_level` from `server/geocode.js` (Nominatim, 1 req/s, no house
   number or name sent). They are for the dashboard map only; never use them for navigation.
 - **Required on save:** the villager's first and last name; a contact or `no_contact` (`contactError()`); a complete
-  2Q/9Q/8Q when a mental need is ticked; every repair item with a type and 1–4 photos; in `address` mode also
+  2Q/9Q/8Q when a mental need is ticked; every item to repair with a type and 1–4 photos; in `address` mode also
   `tambon`, `amphoe`, `province` and `house_no` or `moo`. The server returns 400 for missing ones, so validate the
   same fields in the client. A rule change that rejects what older phones queue strands their outbox: deploy such
   changes only when no phone shows "รอส่ง".
@@ -47,9 +47,11 @@ User-facing documentation is in README.md; this file covers conventions only.
   `encrypt()`/`decrypt()` (`server/crypto.js`). The 1.x columns (national ID, title, age, residence, relief-form fields,
   consent) remain in old rows but are never read. Mental screening answers go only to admins, the creator and
   `mental` responders (`seesMentalDetail()` in `server.js`). Never log personal data, never add real data or `.env`.
-- **Fixing Centre:** `server/repairs.js`. Queue number = `type`-`seq`, allocated inside the visit's transaction;
-  item photos are multipart files named `item_<item uuid>` (multer `.any()`). Walk-ins (`POST /api/repairs`) are
-  online-only and deduplicated by `<request uuid>:<index>`. Roles `fixer`, `office`, `admin` see the tab.
+- **Fixing Centre:** `server/repairs.js`. Only walk-ins (`POST /api/repairs`, online-only, deduplicated by
+  `<request uuid>:<index>`) get a queue number (`type`-`seq`). Items listed in a home visit (section 5) are a survey of
+  needs with no queue: stored as `visits.repair_needs` (JSON), their photos in `photos` with `item_uuid`; the owner
+  registers at the centre. Item photos are multipart files named `item_<item uuid>` (multer `.any()`). Visits from
+  2.0–2.2 may still have `repair_items` rows. Roles `fixer`, `office`, `admin` see the tab.
 - **Local testing:** `.env` with `DEV_AUTH=1`, then `/auth/dev?email=x@eng.buu.ac.th&role=responder&specialty=electrical`.
   DEV_AUTH is ignored when `NODE_ENV=production`. The test login redirects to `PUBLIC_URL`, so the session cookie lands
   on that host.

@@ -106,12 +106,9 @@ export default function NewVisit({ me, notify }) {
     setSaving(false);
     // The outbox may upload older queued visits in the same go: pick this one by its uuid.
     const sent = saved.find((r) => r.uuid === data.uuid);
-    const mine = sent?.repairs?.length ? sent : null;
-    notify(!sent ? 'บันทึกไว้ในเครื่องแล้ว จะส่งอัตโนมัติเมื่อมีสัญญาณ'
-      : mine ? `บันทึกแล้ว เลขคิวซ่อม: ${mine.repairs.map((r) => r.queue).join(', ')}` : 'บันทึกและส่งแล้ว');
+    notify(!sent ? 'บันทึกไว้ในเครื่องแล้ว จะส่งอัตโนมัติเมื่อมีสัญญาณ' : 'บันทึกและส่งแล้ว');
     setV(blank()); setItems([]); setPin(null); setShowMap(false); setMapCenter(null); window.scrollTo(0, 0);
-    // With repair items, open the visit so the volunteer can tell the owner the queue numbers.
-    go(mine ? `/visit/${mine.id}` : '/visits');
+    go('/visits');
   };
 
   const byCat = Object.keys(CATEGORIES).filter((c) => c !== 'general').map((c) => ({ cat: c, list: NEEDS.filter((n) => n.cat === c) }));
@@ -243,7 +240,8 @@ export default function NewVisit({ me, notify }) {
         </details>
       </section>
 
-      <Section title="5. สิ่งของที่ต้องซ่อม" hint="เช่น รถจักรยานยนต์ ตู้เย็น เครื่องซักผ้า โทรทัศน์ ต้องมีรูปถ่ายทุกชิ้น เลขคิวจะออกเมื่อส่งข้อมูลถึงระบบแล้ว">
+      <Section title="5. สิ่งของที่ต้องซ่อม" hint="สำรวจความต้องการเท่านั้น ไม่ได้ออกเลขคิว เช่น รถจักรยานยนต์ ตู้เย็น เครื่องซักผ้า โทรทัศน์ ต้องมีรูปถ่ายทุกชิ้น">
+        <div className="rounded-xl bg-goldpale p-3 text-sm">แจ้งเจ้าของว่า <b>ยังไม่ได้คิวซ่อม</b> ต้องนำสิ่งของไป <b>ลงทะเบียนรับคิวที่ศูนย์ซ่อมด้วยตนเอง</b></div>
         <RepairItems items={items} onChange={setItems} notify={notify} />
       </Section>
 

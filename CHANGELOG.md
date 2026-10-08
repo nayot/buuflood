@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.3.0 — 2026-10-08
+
+- **Items to repair in a home visit are a survey of needs, not a queue.** Section 5 (สิ่งของที่ต้องซ่อม) still records
+  the type, brand, problem and 1–4 photos of each item, but no queue number is issued and nothing goes into the Fixing
+  Centre list. The form tells the volunteer to ask the owner to bring the item to the centre and register there. The
+  visit page and the visit list show the items without a queue number.
+  - Stored as `visits.repair_needs`, photos in `photos` with `item_uuid` (added automatically on start). Queue numbers
+    are now issued only at the centre, so walk-ins no longer skip numbers taken by home visits.
+  - **รับของที่ศูนย์** (walk-in registration with queue numbers), the list, status updates and the report are unchanged.
+    Visits saved with 2.0–2.2 keep their Fixing Centre items and queue numbers.
+  - Phones with visits still waiting to upload need no action: the request format is unchanged.
+- User guide updated.
+
 ## 2.2.0 — 2026-10-08
 
 - **LINE referral for yellow mental-health results.** With the villager's consent, the volunteer can hand them over to

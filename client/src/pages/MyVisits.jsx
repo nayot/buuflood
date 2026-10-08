@@ -43,6 +43,7 @@ export default function MyVisits({ me }) {
             <LevelBadge level={r.level} />
           </div>
           <div className="text-sm text-neutral-500">{addressLine(r.address) || '—'} · {timeAgo(r.created_at)}</div>
+          {r.repair_needs?.length > 0 && <div className="text-sm">🔧 ต้องซ่อม: {r.repair_needs.join(', ')} <span className="text-neutral-500">(ยังไม่มีคิว)</span></div>}
           {r.repairs?.length > 0 && <div className="text-sm">🔧 เลขคิวซ่อม: <b>{r.repairs.join(', ')}</b></div>}
           {r.tickets.length > 0 && (
             <div className="flex flex-wrap gap-1.5 text-xs">

@@ -116,9 +116,17 @@ function migrate(d) {
     d.exec('ALTER TABLE visits ADD COLUMN email_enc TEXT');
     d.exec('ALTER TABLE visits ADD COLUMN no_contact INTEGER NOT NULL DEFAULT 0');
   }
+  if (!hasColumn('visits', 'repair_needs')) {
+    // v2.3: items listed during a home visit are a survey of needs, not Fixing Centre registrations (no queue number;
+    // the owner registers at the centre). JSON array of { uuid, type, type_other, brand, problem }; their photos are
+    // rows in `photos` with item_uuid set. Visits from 2.0-2.2 may still have rows in repair_items.
+    d.exec('ALTER TABLE visits ADD COLUMN repair_needs TEXT');
+    d.exec('ALTER TABLE photos ADD COLUMN item_uuid TEXT');
+  }
 
-  // Fixing Centre. An item comes from a home visit (visit_id) or is registered as a walk-in at the centre (visit_id
-  // null); the owner's name and contacts are copied onto the item either way, so the report needs no join.
+  // Fixing Centre. Items are registered at the centre (visit_id null). Up to 2.2 home visits also created items
+  // (visit_id set, status 'registered'); since 2.3 those are visits.repair_needs. The owner's name and contacts are
+  // copied onto the item, so the report needs no join.
   d.exec(`
   CREATE TABLE IF NOT EXISTS repair_items (
     id INTEGER PRIMARY KEY,
