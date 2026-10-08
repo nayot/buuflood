@@ -13,8 +13,9 @@ const AREA_KEYS = ['moo', 'village', 'tambon', 'amphoe', 'province'];
 export const areaOf = (a = {}) => Object.fromEntries(AREA_KEYS.map((k) => [k, str(a[k], 100)]));
 export const removeFiles = (files) => { for (const f of files || []) fs.rm(f.path, () => {}); };
 
-/** Check the items of a visit or walk-in against the uploaded files. Returns an error code or null. */
-export function itemsError(items, files) {
+/** Check the items of a visit or walk-in against the uploaded files. Returns an error code or null.
+ *  Walk-ins need 1-4 photos per item; home visits (`photoRequired: false`) need none, but may still send them. */
+export function itemsError(items, files, { photoRequired = true } = {}) {
   if (!Array.isArray(items)) return 'items';
   if (items.length > ITEMS_MAX) return 'too many items';
   const seen = new Set();
@@ -24,7 +25,7 @@ export function itemsError(items, files) {
     if (!(it.type in REPAIR_TYPES)) return 'item type';
     if (it.type === 'OT' && !str(it.type_other)) return 'item type_other';
     const n = (files || []).filter((f) => f.fieldname === `item_${it.uuid}`).length;
-    if (n < 1) return 'item photo required';
+    if (photoRequired && n < 1) return 'item photo required';
     if (n > ITEM_PHOTOS_MAX) return 'too many item photos';
   }
   return null;

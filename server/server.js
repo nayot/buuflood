@@ -265,7 +265,7 @@ app.post('/api/visits', need(), upload, (req, res) => {
   const override = LEVELS.includes(d.override_level) ? d.override_level : null;
   if (override && !str(d.override_reason)) return fail('override reason required');
   const items = d.items || [];
-  const itemErr = itemsError(items, files);
+  const itemErr = itemsError(items, files, { photoRequired: false });
   if (itemErr) return fail(itemErr);
   const housePhotos = files.filter((f) => f.fieldname === 'photos');
   if (housePhotos.length > PHOTOS_MAX) return fail('too many photos');

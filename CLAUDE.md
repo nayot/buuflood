@@ -39,7 +39,7 @@ User-facing documentation is in README.md; this file covers conventions only.
   Address-only visits get `approx_lat`/`approx_lng`/`approx_level` from `server/geocode.js` (Nominatim, 1 req/s, no house
   number or name sent). They are for the dashboard map only; never use them for navigation.
 - **Required on save:** the villager's first and last name; a contact or `no_contact` (`contactError()`); a complete
-  2Q/9Q/8Q when a mental need is ticked; every item to repair with a type and 1–4 photos; in `address` mode also
+  2Q/9Q/8Q when a mental need is ticked; every item to repair with a type (walk-ins also 1–4 photos each; home visits take none); in `address` mode also
   `tambon`, `amphoe`, `province` and `house_no` or `moo`. The server returns 400 for missing ones, so validate the
   same fields in the client. A rule change that rejects what older phones queue strands their outbox: deploy such
   changes only when no phone shows "รอส่ง".

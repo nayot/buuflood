@@ -4,12 +4,13 @@ import { Field } from './ui.jsx';
 
 export const blankItem = () => ({ uuid: uuid(), type: '', type_other: '', brand: '', problem: '', photos: [] }); // photos: { blob, url }
 
-/** The first problem with the item list, as a Thai message, or null. Mirrors itemsError() on the server. */
-export function itemsProblem(items) {
+/** The first problem with the item list, as a Thai message, or null. Mirrors itemsError() on the server.
+ *  `photos: false` for a home visit, where items are a survey of needs and take no photos. */
+export function itemsProblem(items, { photos = true } = {}) {
   for (const [i, it] of items.entries()) {
     if (!it.type) return `สิ่งของที่ ${i + 1}: เลือกประเภท`;
     if (it.type === 'OT' && !it.type_other.trim()) return `สิ่งของที่ ${i + 1}: ระบุว่าเป็นอะไร`;
-    if (!it.photos.length) return `สิ่งของที่ ${i + 1}: ต้องมีรูปถ่ายอย่างน้อย 1 รูป`;
+    if (photos && !it.photos.length) return `สิ่งของที่ ${i + 1}: ต้องมีรูปถ่ายอย่างน้อย 1 รูป`;
   }
   return null;
 }
@@ -17,8 +18,8 @@ export function itemsProblem(items) {
 /** What goes into the request: item fields without the photos (those are sent as files "item_<uuid>"). */
 export const itemsPayload = (items) => items.map(({ photos, ...rest }) => rest);
 
-/** Damaged items to repair, each with its own photos. */
-export default function RepairItems({ items, onChange, notify }) {
+/** Damaged items to repair, each with its own photos (none with `photos={false}`). */
+export default function RepairItems({ items, onChange, notify, photos = true }) {
   const patch = (i, p) => onChange(items.map((x, j) => (j === i ? { ...x, ...p } : x)));
   const addPhotos = async (i, files) => {
     const added = [];
@@ -49,7 +50,7 @@ export default function RepairItems({ items, onChange, notify }) {
             <Field label="ยี่ห้อ/รุ่น"><input value={it.brand} onChange={(e) => patch(i, { brand: e.target.value })} /></Field>
             <Field label="อาการ"><input value={it.problem} onChange={(e) => patch(i, { problem: e.target.value })} placeholder="เช่น จมน้ำ สตาร์ทไม่ติด" /></Field>
           </div>
-          <div className="grid grid-cols-4 gap-2">
+          {photos && <div className="grid grid-cols-4 gap-2">
             {it.photos.map((p, k) => (
               <div key={p.url} className="relative">
                 <img src={p.url} alt="" className="aspect-square w-full object-cover rounded-lg" />
@@ -57,8 +58,8 @@ export default function RepairItems({ items, onChange, notify }) {
                   className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white text-xs">✕</button>
               </div>
             ))}
-          </div>
-          {it.photos.length < ITEM_PHOTOS_MAX && (
+          </div>}
+          {photos && it.photos.length < ITEM_PHOTOS_MAX && (
             <div className="grid grid-cols-2 gap-2">
               <label className={`cursor-pointer ${it.photos.length ? 'btn-ghost' : 'btn-gold'}`}>📷 ถ่ายรูป{it.photos.length ? '' : ' *'}
                 <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { addPhotos(i, [...e.target.files]); e.target.value = ''; }} />

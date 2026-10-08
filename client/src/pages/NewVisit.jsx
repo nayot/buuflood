@@ -82,7 +82,7 @@ export default function NewVisit({ me, notify }) {
     const ce = contactError(v);
     if (ce) return notify(ce);
     if (byAddress && !addressComplete) return notify('ใช้ที่อยู่ระบุตำแหน่ง: กรุณากรอกบ้านเลขที่หรือหมู่ ตำบล อำเภอ จังหวัด ในข้อ 3');
-    const ip = itemsProblem(items);
+    const ip = itemsProblem(items, { photos: false });
     if (ip) return notify(ip);
     if (!byAddress && !pos && !confirm('ยังไม่มีตำแหน่ง GPS บันทึกต่อหรือไม่?')) return;
     setSaving(true);
@@ -240,9 +240,9 @@ export default function NewVisit({ me, notify }) {
         </details>
       </section>
 
-      <Section title="5. สิ่งของที่ต้องซ่อม" hint="สำรวจความต้องการเท่านั้น ไม่ได้ออกเลขคิว เช่น รถจักรยานยนต์ ตู้เย็น เครื่องซักผ้า โทรทัศน์ ต้องมีรูปถ่ายทุกชิ้น">
+      <Section title="5. สิ่งของที่ต้องซ่อม" hint="สำรวจความต้องการเท่านั้น ไม่ได้ออกเลขคิว เช่น รถจักรยานยนต์ ตู้เย็น เครื่องซักผ้า โทรทัศน์ ไม่ต้องถ่ายรูป">
         <div className="rounded-xl bg-goldpale p-3 text-sm">แจ้งเจ้าของว่า <b>ยังไม่ได้คิวซ่อม</b> ต้องนำสิ่งของไป <b>ลงทะเบียนรับคิวที่ศูนย์ซ่อมด้วยตนเอง</b></div>
-        <RepairItems items={items} onChange={setItems} notify={notify} />
+        <RepairItems items={items} onChange={setItems} notify={notify} photos={false} />
       </Section>
 
       <Section title="6. หมายเหตุ">

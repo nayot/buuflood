@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.1 — 2026-10-08
+
+- Section 5 of a home visit (สิ่งของที่ต้องซ่อม) no longer asks for photos: the volunteer records the type, brand and
+  problem only. The Fixing Centre still photographs every item at walk-in registration. Photos sent by phones with
+  older visits still waiting to upload are kept.
+
 ## 2.3.0 — 2026-10-08
 
 - **Items to repair in a home visit are a survey of needs, not a queue.** Section 5 (สิ่งของที่ต้องซ่อม) still records
