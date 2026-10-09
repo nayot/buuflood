@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.4.0 — 2026-10-09
+
+- **The LINE bot greets each villager with the nursing team's message for their screening result** (from
+  "ข้อความตอบกลับอัตโนมัติใน Line official", Faculty of Nursing, 9 Oct 2026), instead of one welcome for everyone:
+  - yellow with 8Q = 0 (9Q 7–18): "ทีม…จะทักกลับในแชทนี้ภายใน 24 ชั่วโมง" plus self-care while waiting;
+  - yellow with 8Q 1–8: "จะติดต่อคุณโดยเร็วที่สุด อาจโทรไปตามเบอร์ที่ให้ไว้" plus staying with someone they trust;
+  - code sent before the visit is uploaded (level not known yet): the general message for anyone asking for advice.
+  The two red texts are stored too (`server/line-greetings.js`) but unused, because red results are not handed over
+  to LINE. The brief that follows is unchanged. Referrals now also store the screening flags.
+
 ## 2.3.1 — 2026-10-08
 
 - Section 5 of a home visit (สิ่งของที่ต้องซ่อม) no longer asks for photos: the volunteer records the type, brand and

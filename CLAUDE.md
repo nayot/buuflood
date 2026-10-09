@@ -23,8 +23,10 @@ User-facing documentation is in README.md; this file covers conventions only.
 - **LINE referral** (`server/line.js`, `shared/line.js`, `components/LineReferral.jsx`): yellow mental results only, with
   consent. Codes `BF-XXXXX` (`BT-` in test mode, which the webhook uses to pick the sandbox; it has no session). The form
   registers the code at once (`POST api/line-referrals`, the server rescores the answers); the saved visit is
-  authoritative. Webhook `/line/webhook` (outside `/api`, signature over `req.rawBody`) replies with welcome + brief, or
-  welcome only and pushes the brief when the visit arrives (push needs the villager to be a friend). Never resend once
+  authoritative. Webhook `/line/webhook` (outside `/api`, signature over `req.rawBody`) replies with a greeting + brief, or
+  the greeting only and pushes the brief when the visit arrives (push needs the villager to be a friend). Greetings are
+  the nursing team's wording per screening case in `server/line-greetings.js` (verbatim, don't reword; no level yet =
+  `unknown`). Never resend once
   `status = sent`. The mental ticket closes as `referred` only when the villager has sent the code. Contacts and the
   LINE user id are stored encrypted; the brief is rendered at send time. `LINE_API_BASE` points tests at a mock.
 - **Purging data:** `scripts/purge.js --all --yes` or `--older-than N` deletes visits (tickets, updates and photo rows

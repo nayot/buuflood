@@ -3,9 +3,10 @@
 // The volunteer shows a QR code that opens the OA chat with "รหัสส่งต่อ BF-XXXXX" typed in; the villager sends it.
 // The phone registers the referral with that code (POST api/line-referrals) as soon as the volunteer ticks the option,
 // and again with the saved visit, which is authoritative. When the code arrives through the webhook the bot replies in
-// that chat with a welcome and the brief for the professional who takes over in LINE OA Manager. Replies are free and
-// work before the villager adds the OA as a friend, so the early registration is the main path. If the code arrives
-// first (no signal at the house), the bot replies with the welcome and pushes the brief once the visit is uploaded.
+// that chat with the greeting for the screening level (line-greetings.js) and the brief for the professional who takes
+// over in LINE OA Manager. Replies are free and work before the villager adds the OA as a friend, so the early
+// registration is the main path. If the code arrives first (no signal at the house), the bot replies with the greeting
+// for a level not yet known and pushes the brief once the visit is uploaded.
 //
 // Test-mode codes start with BT- and live in the sandbox database: the webhook has no session, so it picks the
 // database from the code. Every function here takes the database explicitly; nothing runs on the request proxy after
@@ -16,6 +17,7 @@ import { encrypt, decrypt } from './crypto.js';
 import { scoreMental, cleanMental } from '../shared/mental.js';
 import { cleanPhone, cleanLine } from '../shared/contact.js';
 import { parseCode, LEVEL_WORD } from '../shared/line.js';
+import { greeting } from './line-greetings.js';
 
 const SECRET = process.env.LINE_CHANNEL_SECRET || '';
 const TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
@@ -35,13 +37,6 @@ function thaiTime(sql) {
     year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(t).map((x) => [x.type, x.value]));
   return `${Number(p.day)} ${MONTHS[p.month - 1]} ${Number(p.year) + 543} ${p.hour}:${p.minute} น.`;
 }
-
-const welcome = (test) => `${test ? '[ทดสอบ] ' : ''}ขอบคุณที่ติดต่อ BUU Flood Help 💛
-ทีมผู้เชี่ยวชาญด้านสุขภาพใจได้รับเรื่องของท่านแล้ว และจะตอบกลับในแชทนี้โดยเร็วที่สุด
-
-หากรู้สึกไม่ปลอดภัย หรืออยากคุยกับใครทันที
-โทรสายด่วนสุขภาพจิต 1323 (ตลอด 24 ชั่วโมง)
-เจ็บป่วยฉุกเฉิน 1669`;
 
 function brief(r, test) {
   const a = json(r.area, {});
@@ -83,7 +78,7 @@ const getRef = (d, code) => d.prepare(`SELECT r.*, u.name AS volunteer FROM line
   LEFT JOIN users u ON u.id = r.created_by WHERE r.code = ?`).get(code);
 
 /** Mental summary kept with the referral (the brief is rendered at send time, so no plaintext contacts are stored). */
-export const mentalOf = (scored) => JSON.stringify({ level: scored.level, summary: scored.summary, q9: scored.q9, q8: scored.q8 });
+export const mentalOf = (scored) => JSON.stringify({ level: scored.level, summary: scored.summary, q9: scored.q9, q8: scored.q8, flags: scored.flags });
 
 /**
  * Create or refresh a referral's details. `fromVisit` details win over the early registration, and the LINE side
@@ -121,9 +116,10 @@ export async function deliver(d, code, replyToken = null) {
   if (!r || r.status === 'sent' || !r.line_user_enc) return;
   const test = isTest(code);
   const hasDetails = !!r.mental;
+  const hello = text(greeting(hasDetails ? json(r.mental, {}) : null, test)); // the level picks the nursing team's wording
   try {
     if (replyToken) {
-      await callLine('/v2/bot/message/reply', { replyToken, messages: hasDetails ? [text(welcome(test)), text(brief(r, test))] : [text(welcome(test))] });
+      await callLine('/v2/bot/message/reply', { replyToken, messages: hasDetails ? [hello, text(brief(r, test))] : [hello] });
     } else if (hasDetails) {
       await callLine('/v2/bot/message/push', { to: decrypt(r.line_user_enc), messages: [text(brief(r, test))] });
     }
