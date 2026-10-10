@@ -17,7 +17,7 @@ import { mountLine, lineEnabled, LINE_OA, upsertReferral, mentalOf, markReferred
 import { parseCode } from '../shared/line.js';
 import { triage, ticketsFor, needsMentalScreening, CATEGORIES, LEVELS, TICKET_STATUS, NEEDS, parseSpecialties } from '../shared/triage.js';
 import { cleanMental } from '../shared/mental.js';
-import { contactError, cleanPhone, cleanLine, cleanEmail } from '../shared/contact.js';
+import { contactError, cleanPhone, cleanLine, cleanEmail, displayName } from '../shared/contact.js';
 import { ITEMS_MAX, ITEM_PHOTOS_MAX, REPAIR_TYPES, queueNo } from '../shared/repairs.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -242,7 +242,7 @@ function serializeVisit(v, user) {
   return {
     id: v.id, uuid: v.uuid, created_at: v.created_at, visited_at: v.visited_at, created_by: v.created_by,
     lat: v.lat, lng: v.lng, accuracy: v.accuracy,
-    first_name: v.first_name, last_name: v.last_name,
+    first_name: v.first_name, last_name: v.last_name, nickname: v.nickname,
     phone: decrypt(v.phone_enc), line: decrypt(v.line_enc), email: decrypt(v.email_enc), no_contact: !!v.no_contact,
     address: json(v.address, {}), answers, triage_level: v.triage_level, triage: tri,
     override_level: v.override_level, override_reason: v.override_reason, notes: v.notes,
@@ -305,11 +305,11 @@ app.post('/api/visits', need(), upload, (req, res) => {
   db.exec('BEGIN');
   try {
     const visitId = Number(db.prepare(`INSERT INTO visits
-      (uuid, created_by, visited_at, lat, lng, accuracy, first_name, last_name, phone_enc, line_enc, email_enc, no_contact,
+      (uuid, created_by, visited_at, lat, lng, accuracy, first_name, last_name, nickname, phone_enc, line_enc, email_enc, no_contact,
        address, answers, triage_level, triage, override_level, override_reason, notes, location_source, repair_needs)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       String(d.uuid), req.user.id, str(d.visited_at, 40), num(d.lat), num(d.lng), num(d.accuracy),
-      str(d.first_name, 100), str(d.last_name, 100),
+      str(d.first_name, 100), str(d.last_name, 100), str(d.nickname, 50),
       encrypt(cleanPhone(d.phone)), encrypt(cleanLine(d.line)), encrypt(cleanEmail(d.email)), d.no_contact ? 1 : 0,
       JSON.stringify(address), JSON.stringify(answers), result.level, JSON.stringify(result), override,
       str(d.override_reason, 500), str(d.notes, 1000), locationSource, items.length ? JSON.stringify(needsOf(items)) : null,
@@ -359,7 +359,7 @@ app.get('/api/visits', need(), (req, res) => {
   const needLabels = (v) => json(v.repair_needs, []).map((n) => (n.type === 'OT' && n.type_other) || REPAIR_TYPES[n.type] || n.type);
   res.json(rows.map((v) => {
     const s = serializeVisit(v, req.user);
-    return { id: s.id, created_at: s.created_at, level: s.level, name: `${s.first_name || ''} ${s.last_name || ''}`.trim(),
+    return { id: s.id, created_at: s.created_at, level: s.level, name: displayName(s),
       address: s.address, needs: s.answers.needs, tickets: ticketSummary(v.id),
       repairs: queues.all(v.id).map((r) => queueNo(r.type, r.seq)), repair_needs: needLabels(v) };
   }));
@@ -412,7 +412,7 @@ app.get('/api/tickets', need('responder', 'office', 'admin'), (req, res) => {
   const scope = ticketScope(req.user);
   const active = req.query.status !== 'closed';
   const rows = db.prepare(`
-    SELECT t.*, v.first_name, v.last_name, v.lat, v.lng, v.address, v.phone_enc, v.line_enc, v.email_enc, v.answers, v.triage, v.location_source,
+    SELECT t.*, v.first_name, v.last_name, v.nickname, v.lat, v.lng, v.address, v.phone_enc, v.line_enc, v.email_enc, v.answers, v.triage, v.location_source,
            u.name AS assignee_name
     FROM tickets t JOIN visits v ON v.id = t.visit_id LEFT JOIN users u ON u.id = t.assignee_id
     WHERE ${scope.where} AND t.status ${active ? "NOT IN ('done','referred')" : "IN ('done','referred')"}
@@ -423,7 +423,7 @@ app.get('/api/tickets', need('responder', 'office', 'admin'), (req, res) => {
     return {
       id: t.id, visit_id: t.visit_id, category: t.category, level: t.level, status: t.status,
       assignee_id: t.assignee_id, assignee_name: t.assignee_name, created_at: t.created_at, updated_at: t.updated_at,
-      name: `${t.first_name || ''} ${t.last_name || ''}`.trim(), phone: decrypt(t.phone_enc), line: decrypt(t.line_enc), email: decrypt(t.email_enc),
+      name: displayName(t), phone: decrypt(t.phone_enc), line: decrypt(t.line_enc), email: decrypt(t.email_enc),
       lat: t.lat, lng: t.lng, address: json(t.address, {}), location_source: t.location_source,
       items: (answers.needs || []).filter((n) => NEEDS.find((x) => x.id === n)?.cat === t.category),
       other_need: t.category === 'general' ? answers.other_need : null,
@@ -490,11 +490,11 @@ app.post('/api/checkout', need(), (req, res) => {
 // ---------------------------------------------------------------- dashboard
 
 app.get('/api/dashboard', need('responder', 'office', 'admin'), (req, res) => {
-  const visits = db.prepare('SELECT id, lat, lng, approx_lat, approx_lng, approx_level, triage_level, override_level, created_at, address, answers, location_source, first_name, last_name FROM visits ORDER BY id DESC LIMIT 2000').all()
+  const visits = db.prepare('SELECT id, lat, lng, approx_lat, approx_lng, approx_level, triage_level, override_level, created_at, address, answers, location_source, first_name, last_name, nickname FROM visits ORDER BY id DESC LIMIT 2000').all()
     .map((v) => ({
       id: v.id, lat: v.lat, lng: v.lng, created_at: v.created_at, location_source: v.location_source,
       approx_lat: v.approx_lat, approx_lng: v.approx_lng, approx_level: v.approx_level,
-      name: `${v.first_name || ''} ${v.last_name || ''}`.trim(),
+      name: displayName(v),
       level: v.override_level || v.triage_level, address: json(v.address, {}), needs: json(v.answers, {}).needs || [],
       open: db.prepare("SELECT COUNT(*) AS n FROM tickets WHERE visit_id = ? AND status NOT IN ('done','referred')").get(v.id).n,
     }));

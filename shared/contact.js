@@ -1,6 +1,12 @@
 // Contact details for a household or a repair-item owner: phone, LINE or email, at least one, unless the volunteer
 // ticks "no contact" (the reason goes in the notes). Shared so the phone validates exactly like the server.
 
+/** "ชื่อ นามสกุล (ชื่อเล่น)" for lists and headings; the nickname is optional. */
+export const displayName = ({ first_name, last_name, nickname } = {}) => {
+  const full = `${first_name || ''} ${last_name || ''}`.trim();
+  return nickname ? (full ? `${full} (${nickname})` : nickname) : full;
+};
+
 export const cleanPhone = (p) => String(p || '').replace(/[^\d+]/g, '').slice(0, 16);
 export const cleanLine = (l) => String(l || '').trim().replace(/\s+/g, '').slice(0, 50);
 export const cleanEmail = (e) => String(e || '').trim().toLowerCase().slice(0, 120);

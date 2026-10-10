@@ -4,6 +4,7 @@ import { NEEDS, CATEGORIES, TICKET_STATUS } from '../../../shared/triage.js';
 import { Q2, Q9, Q9_SCALE, Q8, Q8_CONTROL, MENTAL_ADVICE } from '../../../shared/mental.js';
 import { REFERRAL_STATUS } from '../../../shared/line.js';
 import { REPAIR_STATUS } from '../../../shared/repairs.js';
+import { displayName } from '../../../shared/contact.js';
 import { LevelBadge, Empty, Section } from '../components/ui.jsx';
 import EmergencyPanel from '../components/Emergency.jsx';
 
@@ -52,7 +53,7 @@ export default function VisitDetail({ id }) {
       <div className="card space-y-2">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h1 className="text-xl font-bold">{`${v.first_name || ''} ${v.last_name || ''}`.trim() || 'ไม่ระบุชื่อ'}</h1>
+            <h1 className="text-xl font-bold">{displayName(v) || 'ไม่ระบุชื่อ'}</h1>
             <div className="text-sm text-neutral-500">บันทึกโดย {v.creator?.name}{v.creator?.phone && <> · <a className="text-golddark underline" href={`tel:${v.creator.phone}`}>📞 {v.creator.phone}</a></>} · {timeAgo(v.created_at)}</div>
           </div>
           <LevelBadge level={v.level} big />

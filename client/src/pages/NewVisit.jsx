@@ -19,7 +19,7 @@ const loadArea = () => { try { return JSON.parse(localStorage.getItem('area') ||
 const blank = () => ({
   uuid: uuid(),
   location_source: 'gps', // 'address' when the villager is met away from home
-  first_name: '', last_name: '', phone: '', line: '', email: '', no_contact: false,
+  first_name: '', last_name: '', nickname: '', phone: '', line: '', email: '', no_contact: false,
   address: { house_no: '', floor: '', soi: '', road: '', ...loadArea() },
   answers: { needs: [], cannot_travel: false, other_need: '', mental: blankMental() },
   line_referral: null, // { code, consent }: yellow mental result handed over to the BUU Flood Help LINE OA
@@ -169,6 +169,7 @@ export default function NewVisit({ me, notify, refreshMe }) {
         <div className="grid grid-cols-2 gap-2">
           <Field label="ชื่อ *"><input required value={v.first_name} onChange={(e) => set({ first_name: e.target.value })} /></Field>
           <Field label="นามสกุล *"><input required value={v.last_name} onChange={(e) => set({ last_name: e.target.value })} /></Field>
+          <Field label="ชื่อเล่น" className="col-span-2"><input value={v.nickname} onChange={(e) => set({ nickname: e.target.value })} placeholder="ถ้ามี" /></Field>
         </div>
         <ContactFields v={v} set={set} />
       </Section>

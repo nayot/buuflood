@@ -116,6 +116,10 @@ function migrate(d) {
     d.exec('ALTER TABLE visits ADD COLUMN email_enc TEXT');
     d.exec('ALTER TABLE visits ADD COLUMN no_contact INTEGER NOT NULL DEFAULT 0');
   }
+  if (!hasColumn('visits', 'nickname')) {
+    // v2.7.2: the villager's nickname (ชื่อเล่น), optional; villages often know people by it.
+    d.exec('ALTER TABLE visits ADD COLUMN nickname TEXT');
+  }
   if (!hasColumn('users', 'phone_enc')) {
     // v2.6: the volunteer's own phone (encrypted), so the team and responders can reach them. Read from prodDb only.
     d.exec('ALTER TABLE users ADD COLUMN phone_enc TEXT');

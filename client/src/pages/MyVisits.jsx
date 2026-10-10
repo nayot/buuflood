@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, addressLine, timeAgo } from '../lib/api.js';
 import { pending, flush, onOutboxChange } from '../lib/outbox.js';
 import { CATEGORIES, TICKET_STATUS } from '../../../shared/triage.js';
+import { displayName } from '../../../shared/contact.js';
 import { LevelBadge, Empty } from '../components/ui.jsx';
 
 export default function MyVisits({ me }) {
@@ -28,7 +29,7 @@ export default function MyVisits({ me }) {
           <div className="font-semibold">ยังไม่ได้ส่ง {queued.length} รายการ</div>
           {queued.map((q) => (
             <div key={q.uuid} className="text-sm flex justify-between gap-2">
-              <span>{q.data.first_name || 'ไม่ระบุชื่อ'} {q.data.last_name}</span>
+              <span>{displayName(q.data) || 'ไม่ระบุชื่อ'}</span>
               <span className={q.failed ? 'text-lvred' : 'text-neutral-500'}>{q.failed ? `ส่งไม่ได้: ${q.failed}` : 'รอสัญญาณ'}</span>
             </div>
           ))}

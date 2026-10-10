@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.7.2 — 2026-10-10
+
+- **The villager's nickname (ชื่อเล่น)**, optional, under the name in section 2 of a home visit (`visits.nickname`).
+  Lists and headings show "ชื่อ นามสกุล (ชื่อเล่น)" (`displayName()` in `shared/contact.js`), and the jobs search finds it.
+  Visits queued on phones before the update are accepted without one.
+
 ## 2.7.1 — 2026-10-10
 
 - **`APPROVAL_DOMAINS=*` admits any Google account, with approval.** Accounts outside `ALLOWED_DOMAINS` start as
