@@ -72,6 +72,9 @@ export default function Tickets({ me, notify, onChange }) {
   const [rows, setRows] = useState(null);
   const [closed, setClosed] = useState(false);
   const [onlyMine, setOnlyMine] = useState(false);
+  const [cat, setCat] = useState('');
+  const [hideTaken, setHideTaken] = useState(() => localStorage.getItem('hideTaken') === '1');
+  const toggleHideTaken = (v) => { setHideTaken(v); localStorage.setItem('hideTaken', v ? '1' : '0'); };
 
   const load = () => api(`api/tickets${closed ? '?status=closed' : ''}`).then((r) => {
     setRows(r);
@@ -79,7 +82,10 @@ export default function Tickets({ me, notify, onChange }) {
   }).catch(() => setRows([]));
   useEffect(() => { load(); const t = setInterval(load, 45000); return () => clearInterval(t); }, [closed]);
 
-  const shown = (rows || []).filter((t) => !onlyMine || t.assignee_id === me.id);
+  const cats = [...new Set((rows || []).map((t) => t.category))];
+  const shown = (rows || []).filter((t) => (!onlyMine || t.assignee_id === me.id)
+    && (!cat || t.category === cat)
+    && (closed || !hideTaken || !t.assignee_id || t.assignee_id === me.id));
 
   return (
     <div className="space-y-3">
@@ -88,6 +94,15 @@ export default function Tickets({ me, notify, onChange }) {
         <button onClick={() => setClosed(false)} className={`rounded-full px-3 py-1.5 ${!closed ? 'bg-ink text-white' : 'bg-white'}`}>เปิดอยู่</button>
         <button onClick={() => setClosed(true)} className={`rounded-full px-3 py-1.5 ${closed ? 'bg-ink text-white' : 'bg-white'}`}>ปิดแล้ว</button>
         <label className="ml-auto flex items-center gap-2"><input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} />ของฉัน</label>
+      </div>
+      <div className="flex gap-2 text-sm items-center">
+        {(cats.length > 1 || cat) && (
+          <select value={cat} onChange={(e) => setCat(e.target.value)} className="w-auto">
+            <option value="">ทุกด้าน</option>
+            {Object.entries(CATEGORIES).filter(([k]) => cats.includes(k) || k === cat).map(([k, c]) => <option key={k} value={k}>{c.icon} {c.label}</option>)}
+          </select>
+        )}
+        {!closed && <label className="ml-auto flex items-center gap-2"><input type="checkbox" checked={hideTaken} onChange={(e) => toggleHideTaken(e.target.checked)} />ซ่อนงานที่คนอื่นรับแล้ว</label>}
       </div>
       {me.role === 'responder' && (
         me.specialties?.length

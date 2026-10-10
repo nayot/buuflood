@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.5.0 — 2026-10-10
+
+Requested in the field on the first volunteer day.
+
+- **The jobs page (งาน) can be filtered by need category** (ทุกด้าน, ⚡ ไฟฟ้า, 🏠 โครงสร้างบ้าน, …). The dropdown appears
+  when the list holds more than one category, as it does for admins and office staff.
+- **"ซ่อนงานที่คนอื่นรับแล้ว"** on the open jobs hides tickets someone else has claimed; your own and unclaimed ones
+  stay. Each phone remembers the choice.
+- Client only: no change to the server, the triage rules or the outbox.
+
 ## 2.4.0 — 2026-10-09
 
 - **The LINE bot greets each villager with the nursing team's message for their screening result** (from
