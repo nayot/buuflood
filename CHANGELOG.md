@@ -2,7 +2,7 @@
 
 ## 2.7.5 — 2026-10-10
 
-- The switch in the ⋯ menu reads just **🔌 ปิดแอป** / **🔌 เปิดแอป**, with no explanation line.
+- The switch in the ⋯ menu is a sliding switch, **🔌 แอป เปิด/ปิด**, with no explanation line.
 
 ## 2.7.4 — 2026-10-10
 

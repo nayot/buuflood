@@ -231,8 +231,13 @@ export default function App() {
                 <span>แชร์ตำแหน่งระหว่างปฏิบัติงาน<br /><span className="text-xs text-neutral-500">ส่งทุก 2 นาทีขณะเปิดแอปอยู่</span></span>
               </label>
               {me.realRole === 'admin' && (
-                <button onClick={() => setAppClosed(!closed)} className="w-full text-left p-2 rounded-lg hover:bg-neutral-100">
-                  {closed ? '🔌 เปิดแอป' : '🔌 ปิดแอป'}
+                <button role="switch" aria-checked={!closed} onClick={() => setAppClosed(!closed)}
+                  className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-neutral-100">
+                  <span className="flex-1 text-left">🔌 แอป</span>
+                  <span className={`text-xs font-bold ${closed ? 'text-lvred' : 'text-lvgreen'}`}>{closed ? 'ปิด' : 'เปิด'}</span>
+                  <span className={`relative w-11 h-6 rounded-full transition-colors ${closed ? 'bg-neutral-300' : 'bg-lvgreen'}`}>
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${closed ? '' : 'translate-x-5'}`} />
+                  </span>
                 </button>
               )}
               {me.realRole === 'admin' && (
