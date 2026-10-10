@@ -32,7 +32,7 @@ User-facing documentation is in README.md; this file covers conventions only.
 - **Volunteer phone:** `users.phone_enc` (encrypted), always read and written on `prodDb` (it is account data, not test
   data, and sandbox user rows don't copy it). `POST api/me/phone`; `/api/me`, `/api/users` and the visit's `creator` carry it.
 - **Sign-in domains:** `ALLOWED_DOMAINS` (`/api/me` returns them to the login page). New accounts are volunteers, except
-  those from `APPROVAL_DOMAINS`, which start as `pending`: `need()` answers 403 `pending` for them (checked on
+  those from `APPROVAL_DOMAINS` (`*` = any domain not in `ALLOWED_DOMAINS`), which start as `pending`: `need()` answers 403 `pending` for them (checked on
   `prodUser`); only `/api/me`, `/api/me/phone` and logout work.
 - **Purging data:** `scripts/purge.js --all --yes` or `--older-than N` deletes visits (tickets, updates and photo rows
   cascade), photo files and (with `--all`) check-ins, and keeps users. In Docker: `docker compose exec app node scripts/purge.js …`.

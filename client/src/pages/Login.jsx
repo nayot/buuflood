@@ -1,9 +1,13 @@
 import { useState } from 'react';
 import Copyright from '../components/Copyright.jsx';
 
+const join = (list) => (list.length > 1 ? `${list.slice(0, -1).join(' ')} หรือ ${list.at(-1)}` : list[0]);
+// domains = { allowed, approval } from the server; approval '*' = any other Google account.
 const domainList = (domains) => {
-  const list = (domains?.length ? domains : ['go.buu.ac.th', 'eng.buu.ac.th']).map((d) => `@${d}`);
-  return list.length > 1 ? `${list.slice(0, -1).join(' ')} หรือ ${list.at(-1)}` : list[0];
+  const allowed = join((domains?.allowed?.length ? domains.allowed : ['go.buu.ac.th', 'eng.buu.ac.th']).map((d) => `@${d}`));
+  const approval = domains?.approval || [];
+  if (approval.includes('*')) return `${allowed} เข้าใช้ได้ทันที บัญชี Google อื่นต้องรอผู้ดูแลระบบอนุมัติ`;
+  return approval.length ? `${allowed} (บัญชี ${join(approval.map((d) => `@${d}`))} ต้องรออนุมัติ)` : allowed;
 };
 
 export default function Login({ error, devAuth, domains }) {

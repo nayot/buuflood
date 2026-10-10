@@ -114,7 +114,7 @@ export default function App() {
 
   const refreshMe = () => api('api/me').then((r) => {
     setTestMode(!!r.test); setOutboxMode(!!r.test); setTest(r.test || null);
-    setMe(r.user); setDevAuth(!!r.devAuth); setDomains(r.domains || null); rememberLocalContacts(r.emergency);
+    setMe(r.user); setDevAuth(!!r.devAuth); setDomains(r.domains ? { allowed: r.domains, approval: r.approval || [] } : null); rememberLocalContacts(r.emergency);
   }).catch(() => setMe(null));
   useEffect(() => { refreshMe(); }, []);
   useEffect(() => onOutboxChange(setOutbox), []);

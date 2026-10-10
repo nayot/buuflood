@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.7.1 — 2026-10-10
+
+- **`APPROVAL_DOMAINS=*` admits any Google account, with approval.** Accounts outside `ALLOWED_DOMAINS` start as
+  "รออนุมัติ"; `@go.buu.ac.th` and `@eng.buu.ac.th` still start as volunteers. The login page says so.
+
 ## 2.7.0 — 2026-10-10
 
 - **Accounts from `APPROVAL_DOMAINS` (gmail.com on the project's server) wait for an admin's approval.** They start as

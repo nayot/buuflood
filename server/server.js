@@ -27,7 +27,7 @@ const PUBLIC_URL = (process.env.PUBLIC_URL || `http://localhost:${PORT}`).replac
 const BASE_PATH = new URL(PUBLIC_URL).pathname.replace(/\/$/, '') || '';
 const DOMAINS = (process.env.ALLOWED_DOMAINS || 'go.buu.ac.th,eng.buu.ac.th').split(',').map((s) => s.trim().toLowerCase());
 // New accounts from these domains start as `pending` and can do nothing until an admin gives them a role
-// (e.g. gmail.com, which anyone can have).
+// (e.g. gmail.com, which anyone can have). `*` = any other Google account, with approval.
 const APPROVAL_DOMAINS = (process.env.APPROVAL_DOMAINS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 const ADMINS = (process.env.ADMIN_EMAILS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 const DEV_AUTH = !PROD && process.env.DEV_AUTH === '1';
@@ -85,7 +85,10 @@ app.use((req, res, next) => {
 
 // ---------------------------------------------------------------- auth
 
-const allowedEmail = (email) => DOMAINS.includes(String(email).toLowerCase().split('@')[1]);
+const domainOf = (email) => String(email).toLowerCase().split('@')[1];
+const needsApproval = (email) => APPROVAL_DOMAINS.includes(domainOf(email))
+  || (APPROVAL_DOMAINS.includes('*') && !DOMAINS.includes(domainOf(email)));
+const allowedEmail = (email) => DOMAINS.includes(domainOf(email)) || needsApproval(email);
 
 function upsertUser({ email, name, picture }) {
   email = email.toLowerCase();
@@ -96,7 +99,7 @@ function upsertUser({ email, name, picture }) {
       .run(name || existing.name, picture || existing.picture, role, existing.id);
     return existing.id;
   }
-  const role = ADMINS.includes(email) ? 'admin' : APPROVAL_DOMAINS.includes(email.split('@')[1]) ? 'pending' : 'volunteer';
+  const role = ADMINS.includes(email) ? 'admin' : needsApproval(email) ? 'pending' : 'volunteer';
   return Number(prodDb.prepare("INSERT INTO users (email, name, picture, role, last_login) VALUES (?, ?, ?, ?, datetime('now'))")
     .run(email, name || email, picture || null, role).lastInsertRowid);
 }
@@ -147,7 +150,7 @@ const need = (...roles) => (req, res, next) => {
 };
 
 app.get('/api/me', (req, res) => {
-  if (!req.user) return res.json({ user: null, devAuth: DEV_AUTH, domains: DOMAINS });
+  if (!req.user) return res.json({ user: null, devAuth: DEV_AUTH, domains: DOMAINS, approval: APPROVAL_DOMAINS });
   const { id, email, name, picture, role, specialty } = req.user;
   res.json({ user: { id, email, name, picture, role, specialty, specialties: parseSpecialties(specialty), realRole: req.prodUser.role,
     phone: decrypt(req.prodUser.phone_enc),
