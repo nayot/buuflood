@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.7.4 — 2026-10-10
+
+- The on/off switch in the ⋯ menu is now a button that says what it does: **🔌 ปิดแอปชั่วคราว** or **🔌 เปิดแอปอีกครั้ง**,
+  instead of a ticked "เปิดให้ผู้ใช้ใช้งานแอป" box with a "ปิด = …" hint, which read as if the app were off.
+
 ## 2.7.3 — 2026-10-10
 
 - **Admins can switch the app off and on** (⋯ → 🔌 เปิดให้ผู้ใช้ใช้งานแอป, with an optional message). While it is off,

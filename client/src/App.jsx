@@ -231,10 +231,12 @@ export default function App() {
                 <span>แชร์ตำแหน่งระหว่างปฏิบัติงาน<br /><span className="text-xs text-neutral-500">ส่งทุก 2 นาทีขณะเปิดแอปอยู่</span></span>
               </label>
               {me.realRole === 'admin' && (
-                <label className="flex items-center gap-2 p-2">
-                  <input type="checkbox" checked={!closed} onChange={(e) => setAppClosed(!e.target.checked)} />
-                  <span>🔌 เปิดให้ผู้ใช้ใช้งานแอป<br /><span className="text-xs text-neutral-500">ปิด = ทุกคนยกเว้นผู้ดูแลระบบใช้งานไม่ได้ บันทึกที่รอส่งยังเก็บไว้ในเครื่อง</span></span>
-                </label>
+                <button onClick={() => setAppClosed(!closed)} className="w-full text-left p-2 rounded-lg hover:bg-neutral-100">
+                  {closed ? '🔌 เปิดแอปอีกครั้ง' : '🔌 ปิดแอปชั่วคราว'}<br />
+                  <span className="text-xs text-neutral-500">{closed
+                    ? 'ตอนนี้แอปปิดอยู่ ผู้ใช้อื่นใช้งานไม่ได้'
+                    : 'ผู้ใช้อื่นจะใช้งานไม่ได้จนกว่าจะเปิดอีกครั้ง (ผู้ดูแลระบบใช้ได้ตามปกติ) บันทึกที่รอส่งในเครื่องไม่หาย'}</span>
+                </button>
               )}
               {me.realRole === 'admin' && (
                 <label className="flex items-center gap-2 p-2">
