@@ -8,6 +8,8 @@ import Login from './pages/Login.jsx';
 import PhonePrompt from './components/PhonePrompt.jsx';
 import Pending from './pages/Pending.jsx';
 import Closed from './pages/Closed.jsx';
+import Announce from './pages/Announce.jsx';
+import { useAnnouncements, AnnouncementPopup } from './components/Announcement.jsx';
 import NewVisit from './pages/NewVisit.jsx';
 import MyVisits from './pages/MyVisits.jsx';
 import VisitDetail from './pages/VisitDetail.jsx';
@@ -113,6 +115,7 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [test, setTest] = useState(null); // { until } while the admin test mode is on
   const loc = useLocationSharing(me);
+  const ann = useAnnouncements(me);
 
   const refreshMe = () => api('api/me').then((r) => {
     setTestMode(!!r.test); setOutboxMode(!!r.test); setTest(r.test || null);
@@ -149,8 +152,9 @@ export default function App() {
   if (me === undefined) return <div className="p-8 text-center text-neutral-500">กำลังโหลด…</div>;
   if (!me && path === '/guide') return <Guide standalone section={query.get('s')} />;
   if (!me) return <Login error={query.get('error')} devAuth={devAuth} domains={domains} />;
-  if (me.realRole === 'pending') return <Pending me={me} onRefresh={refreshMe} />;
-  if (closed && me.realRole !== 'admin') return <Closed me={me} closed={closed} outbox={outbox} onRefresh={refreshMe} />;
+  const popup = <AnnouncementPopup a={ann.current} left={ann.left} onAck={ann.ack} />;
+  if (me.realRole === 'pending') return <><Pending me={me} onRefresh={refreshMe} />{popup}</>;
+  if (closed && me.realRole !== 'admin') return <><Closed me={me} closed={closed} outbox={outbox} onRefresh={refreshMe} />{popup}</>;
 
   const tabs = tabsFor(me.role);
   const home = me.role === 'fixer' ? '/repairs' : tabs.find((t) => t.to === '/tickets') ? '/tickets' : '/new';
@@ -164,6 +168,7 @@ export default function App() {
   else if (active === '/map') page = <Dashboard me={me} />;
   else if (active === '/repairs' && ['fixer', 'office', 'admin'].includes(me.role)) page = <Repairs notify={notify} view={query.get('view') || 'list'} />;
   else if (active.startsWith('/repair/')) page = <RepairDetail id={active.split('/')[2]} me={me} notify={notify} />;
+  else if (active === '/announce' && me.realRole === 'admin') page = <Announce notify={notify} />;
   else if (active === '/users' && me.role === 'admin') page = <Users me={me} notify={notify} refreshMe={refreshMe} />;
   else if (active === '/guide') page = <Guide section={query.get('s')} />;
   else page = <NewVisit me={me} notify={notify} refreshMe={refreshMe} />;
@@ -249,6 +254,7 @@ export default function App() {
               <button onClick={() => setEditPhone(true)} className="w-full text-left p-2 rounded-lg hover:bg-neutral-100">
                 📞 เบอร์โทรของฉัน<br /><span className={`text-xs ${me.phone ? 'text-neutral-500' : 'text-lvred'}`}>{me.phone || 'ยังไม่ได้ใส่'}</span>
               </button>
+              {me.realRole === 'admin' && <a href="#/announce" className="block p-2 rounded-lg hover:bg-neutral-100">📢 ส่งประกาศ</a>}
               <a href="#/guide" className="block p-2 rounded-lg hover:bg-neutral-100">📖 คู่มือการใช้งาน</a>
               <div className="px-2 pb-2 text-xs text-neutral-500">{me.email}</div>
               <img src="buu-eng-logo.png" alt="มหาวิทยาลัยบูรพา คณะวิศวกรรมศาสตร์" className="h-8 mx-2 mb-2" />
@@ -288,6 +294,7 @@ export default function App() {
         </div>
       </nav>
 
+      {popup}
       {editPhone && <PhonePrompt me={me} skipLabel="ยกเลิก" onSaved={refreshMe} onDone={(ok) => { setEditPhone(false); if (ok) notify('บันทึกเบอร์แล้ว'); }} />}
       {toast && <div className="fixed bottom-24 inset-x-4 z-[1100] mx-auto max-w-sm rounded-xl bg-ink text-white px-4 py-3 text-center shadow-lg">{toast}</div>}
     </div>

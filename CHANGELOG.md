@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.7.6 — 2026-10-10
+
+- **Announcements.** Admins send one from ⋯ → 📢 ส่งประกาศ. It pops up on every signed-in phone (also accounts waiting
+  for approval, and while the app is closed) until the user presses **รับทราบ**. Phones check every minute and when
+  the app comes back on screen; an acknowledgement made offline is sent at the next check. The page lists past
+  announcements with "รับทราบแล้ว n/m คน" and can withdraw one (ยกเลิก). Tables `announcements` and
+  `announcement_acks` in the production database.
+- The app on/off control in the ⋯ menu is a sliding switch (🔌 แอป เปิด/ปิด).
+
 ## 2.7.5 — 2026-10-10
 
 - The switch in the ⋯ menu is a sliding switch, **🔌 แอป เปิด/ปิด**, with no explanation line.

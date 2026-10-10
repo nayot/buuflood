@@ -179,6 +179,21 @@ function migrate(d) {
     value TEXT
   );
 
+  CREATE TABLE IF NOT EXISTS announcements (      -- admin messages that pop up until each user acknowledges them
+    id INTEGER PRIMARY KEY,
+    message TEXT NOT NULL,
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    ended_at TEXT                                 -- withdrawn: no longer shown
+  );
+
+  CREATE TABLE IF NOT EXISTS announcement_acks (
+    announcement_id INTEGER NOT NULL REFERENCES announcements(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    acked_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (announcement_id, user_id)
+  );
+
   CREATE TABLE IF NOT EXISTS line_referrals (
     code TEXT PRIMARY KEY,                        -- BF-XXXXX (BT- in test mode)
     created_by INTEGER REFERENCES users(id),

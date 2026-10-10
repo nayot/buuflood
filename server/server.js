@@ -92,7 +92,7 @@ const appClosed = () => {
   return v ? JSON.parse(v) : null;
 };
 app.use('/api', (req, res, next) => {
-  if (req.path === '/me' || req.prodUser?.role === 'admin') return next();
+  if (req.path === '/me' || req.path.startsWith('/announcements/') || req.prodUser?.role === 'admin') return next();
   const closed = appClosed();
   if (closed) return res.status(503).json({ error: 'closed', message: closed.message || null });
   next();
@@ -195,6 +195,48 @@ app.post('/api/app-closed', realAdmin, (req, res) => {
     prodDb.prepare("INSERT INTO settings (key, value) VALUES ('app_closed', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(value);
   } else prodDb.prepare("DELETE FROM settings WHERE key = 'app_closed'").run();
   res.json({ ok: true, closed: appClosed() });
+});
+
+// ---------------------------------------------------------------- announcements
+
+// Production data in either mode. Every signed-in account gets them, including pending ones and while the app is
+// closed (the /api gate lets /api/announcements/* through); the phone polls `pending` and acknowledges each one.
+const announcementsFor = (uid) => prodDb.prepare(`SELECT a.id, a.message, a.created_at, u.name AS by FROM announcements a
+  LEFT JOIN users u ON u.id = a.created_by
+  WHERE a.ended_at IS NULL AND NOT EXISTS (SELECT 1 FROM announcement_acks k WHERE k.announcement_id = a.id AND k.user_id = ?)
+  ORDER BY a.id`).all(uid);
+
+app.get('/api/announcements/pending', (req, res) => {
+  if (!req.prodUser) return res.status(401).json({ error: 'login' });
+  res.json(announcementsFor(req.prodUser.id));
+});
+
+app.post('/api/announcements/:id/ack', (req, res) => {
+  if (!req.prodUser) return res.status(401).json({ error: 'login' });
+  prodDb.prepare('INSERT OR IGNORE INTO announcement_acks (announcement_id, user_id) SELECT id, ? FROM announcements WHERE id = ?')
+    .run(req.prodUser.id, Number(req.params.id));
+  res.json({ ok: true });
+});
+
+app.get('/api/announcements', realAdmin, (req, res) => {
+  const users = prodDb.prepare("SELECT COUNT(*) AS n FROM users WHERE role != 'pending'").get().n;
+  res.json({ users, list: prodDb.prepare(`SELECT a.*, u.name AS by,
+      (SELECT COUNT(*) FROM announcement_acks k JOIN users x ON x.id = k.user_id
+        WHERE k.announcement_id = a.id AND x.role != 'pending') AS acks
+    FROM announcements a LEFT JOIN users u ON u.id = a.created_by ORDER BY a.id DESC LIMIT 50`).all() });
+});
+
+app.post('/api/announcements', realAdmin, (req, res) => {
+  const message = String(req.body?.message || '').trim().slice(0, 1000);
+  if (!message) return res.status(400).json({ error: 'message' });
+  const id = Number(prodDb.prepare('INSERT INTO announcements (message, created_by) VALUES (?, ?)').run(message, req.prodUser.id).lastInsertRowid);
+  prodDb.prepare('INSERT INTO announcement_acks (announcement_id, user_id) VALUES (?, ?)').run(id, req.prodUser.id); // the sender has read it
+  res.json({ ok: true, id });
+});
+
+app.post('/api/announcements/:id/end', realAdmin, (req, res) => {
+  prodDb.prepare("UPDATE announcements SET ended_at = datetime('now') WHERE id = ? AND ended_at IS NULL").run(Number(req.params.id));
+  res.json({ ok: true });
 });
 
 app.post('/api/test-mode', realAdmin, (req, res) => {
