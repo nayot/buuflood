@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.7.5 — 2026-10-10
+
+- The switch in the ⋯ menu reads just **🔌 ปิดแอป** / **🔌 เปิดแอป**, with no explanation line.
+
 ## 2.7.4 — 2026-10-10
 
 - The on/off switch in the ⋯ menu is now a button that says what it does: **🔌 ปิดแอปชั่วคราว** or **🔌 เปิดแอปอีกครั้ง**,

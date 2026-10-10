@@ -232,10 +232,7 @@ export default function App() {
               </label>
               {me.realRole === 'admin' && (
                 <button onClick={() => setAppClosed(!closed)} className="w-full text-left p-2 rounded-lg hover:bg-neutral-100">
-                  {closed ? '🔌 เปิดแอปอีกครั้ง' : '🔌 ปิดแอปชั่วคราว'}<br />
-                  <span className="text-xs text-neutral-500">{closed
-                    ? 'ตอนนี้แอปปิดอยู่ ผู้ใช้อื่นใช้งานไม่ได้'
-                    : 'ผู้ใช้อื่นจะใช้งานไม่ได้จนกว่าจะเปิดอีกครั้ง (ผู้ดูแลระบบใช้ได้ตามปกติ) บันทึกที่รอส่งในเครื่องไม่หาย'}</span>
+                  {closed ? '🔌 เปิดแอป' : '🔌 ปิดแอป'}
                 </button>
               )}
               {me.realRole === 'admin' && (
