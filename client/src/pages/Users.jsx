@@ -17,18 +17,19 @@ export default function Users({ me, notify }) {
     catch { notify('บันทึกไม่สำเร็จ'); }
   };
 
-  const shown = (rows || []).filter((u) => !q || `${u.name} ${u.email}`.toLowerCase().includes(q.toLowerCase()));
+  const shown = (rows || []).filter((u) => !q || `${u.name} ${u.email} ${u.phone || ''}`.toLowerCase().includes(q.toLowerCase()));
 
   return (
     <div className="space-y-3">
       <h1 className="text-xl font-bold px-1">ผู้ใช้และสิทธิ์</h1>
       <p className="text-sm text-neutral-500 px-1">ผู้ใช้ใหม่เป็นอาสาสมัครโดยอัตโนมัติเมื่อเข้าสู่ระบบครั้งแรก กำหนดผู้เชี่ยวชาญพร้อมด้านที่รับผิดชอบได้ที่นี่</p>
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาชื่อหรืออีเมล" />
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาชื่อ อีเมล หรือเบอร์โทร" />
       {rows === null ? <Empty>กำลังโหลด…</Empty> : shown.map((u) => (
         <div key={u.id} className="card space-y-2">
           <div>
             <div className="font-semibold">{u.name}</div>
             <div className="text-xs text-neutral-500">{u.email} · เข้าใช้ {timeAgo(u.last_login)}</div>
+            <div className="text-xs">{u.phone ? <a className="text-golddark underline" href={`tel:${u.phone}`}>📞 {u.phone}</a> : <span className="text-neutral-400">ยังไม่มีเบอร์โทร</span>}</div>
           </div>
           <div>
             <select value={u.role} disabled={u.id === me.id} onChange={(e) => save(u, { role: e.target.value })}>

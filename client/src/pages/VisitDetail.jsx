@@ -53,7 +53,7 @@ export default function VisitDetail({ id }) {
         <div className="flex items-start justify-between gap-2">
           <div>
             <h1 className="text-xl font-bold">{`${v.first_name || ''} ${v.last_name || ''}`.trim() || 'ไม่ระบุชื่อ'}</h1>
-            <div className="text-sm text-neutral-500">บันทึกโดย {v.creator?.name} · {timeAgo(v.created_at)}</div>
+            <div className="text-sm text-neutral-500">บันทึกโดย {v.creator?.name}{v.creator?.phone && <> · <a className="text-golddark underline" href={`tel:${v.creator.phone}`}>📞 {v.creator.phone}</a></>} · {timeAgo(v.created_at)}</div>
           </div>
           <LevelBadge level={v.level} big />
         </div>

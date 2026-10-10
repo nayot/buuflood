@@ -73,6 +73,7 @@ export default function Tickets({ me, notify, onChange }) {
   const [closed, setClosed] = useState(false);
   const [onlyMine, setOnlyMine] = useState(false);
   const [cat, setCat] = useState('');
+  const [q, setQ] = useState('');
   const [hideTaken, setHideTaken] = useState(() => localStorage.getItem('hideTaken') === '1');
   const toggleHideTaken = (v) => { setHideTaken(v); localStorage.setItem('hideTaken', v ? '1' : '0'); };
 
@@ -83,7 +84,11 @@ export default function Tickets({ me, notify, onChange }) {
   useEffect(() => { load(); const t = setInterval(load, 45000); return () => clearInterval(t); }, [closed]);
 
   const cats = [...new Set((rows || []).map((t) => t.category))];
+  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const haystack = (t) => [t.name, addressLine(t.address), t.phone, t.line, t.email, t.assignee_name, t.other_need,
+    CATEGORIES[t.category]?.label, ...t.items.map((i) => NEEDS.find((n) => n.id === i)?.label)].join(' ').toLowerCase();
   const shown = (rows || []).filter((t) => (!onlyMine || t.assignee_id === me.id)
+    && (!words.length || words.every((w) => haystack(t).includes(w)))
     && (!cat || t.category === cat)
     && (closed || !hideTaken || !t.assignee_id || t.assignee_id === me.id));
 
@@ -108,6 +113,12 @@ export default function Tickets({ me, notify, onChange }) {
         me.specialties?.length
           ? <div className="text-sm text-neutral-500 px-1">ด้านของคุณ: {me.specialties.map((s) => SPECIALTIES[s]).join(' · ')}</div>
           : <div className="card bg-goldpale text-sm">ยังไม่ได้กำหนดด้านที่รับผิดชอบ จึงยังไม่เห็นงาน ติดต่อผู้ดูแลระบบ</div>
+      )}
+      <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 ค้นหาชื่อ ที่อยู่ เบอร์โทร ความต้องการ หรือผู้รับงาน" />
+      {rows !== null && (
+        <div className="text-sm text-neutral-500 px-1">
+          {shown.length === rows.length ? `${rows.length} งาน` : `แสดง ${shown.length} จาก ${rows.length} งาน`}
+        </div>
       )}
       {rows === null ? <Empty>กำลังโหลด…</Empty> : shown.length === 0 ? <Empty>ไม่มีงาน</Empty>
         : shown.map((t) => <TicketCard key={t.id} t={t} me={me} reload={load} notify={notify} />)}

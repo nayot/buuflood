@@ -5,6 +5,7 @@ import { SPECIALTIES } from '../../shared/triage.js';
 import { getPosition } from './lib/device.js';
 import { go } from './lib/nav.js';
 import Login from './pages/Login.jsx';
+import PhonePrompt from './components/PhonePrompt.jsx';
 import NewVisit from './pages/NewVisit.jsx';
 import MyVisits from './pages/MyVisits.jsx';
 import VisitDetail from './pages/VisitDetail.jsx';
@@ -102,6 +103,8 @@ export default function App() {
   const { path, query } = useHash();
   const [me, setMe] = useState(undefined);
   const [devAuth, setDevAuth] = useState(false);
+  const [domains, setDomains] = useState(null);
+  const [editPhone, setEditPhone] = useState(false);
   const [outbox, setOutbox] = useState(0);
   const [openTickets, setOpenTickets] = useState(0);
   const [toast, setToast] = useState(null);
@@ -110,7 +113,7 @@ export default function App() {
 
   const refreshMe = () => api('api/me').then((r) => {
     setTestMode(!!r.test); setOutboxMode(!!r.test); setTest(r.test || null);
-    setMe(r.user); setDevAuth(!!r.devAuth); rememberLocalContacts(r.emergency);
+    setMe(r.user); setDevAuth(!!r.devAuth); setDomains(r.domains || null); rememberLocalContacts(r.emergency);
   }).catch(() => setMe(null));
   useEffect(() => { refreshMe(); }, []);
   useEffect(() => onOutboxChange(setOutbox), []);
@@ -136,14 +139,14 @@ export default function App() {
 
   if (me === undefined) return <div className="p-8 text-center text-neutral-500">กำลังโหลด…</div>;
   if (!me && path === '/guide') return <Guide standalone section={query.get('s')} />;
-  if (!me) return <Login error={query.get('error')} devAuth={devAuth} />;
+  if (!me) return <Login error={query.get('error')} devAuth={devAuth} domains={domains} />;
 
   const tabs = tabsFor(me.role);
   const home = me.role === 'fixer' ? '/repairs' : tabs.find((t) => t.to === '/tickets') ? '/tickets' : '/new';
   const active = path === '/' ? home : path;
 
   let page;
-  if (active === '/new') page = <NewVisit me={me} notify={notify} />;
+  if (active === '/new') page = <NewVisit me={me} notify={notify} refreshMe={refreshMe} />;
   else if (active === '/visits') page = <MyVisits me={me} />;
   else if (active.startsWith('/visit/')) page = <VisitDetail id={active.split('/')[2]} me={me} notify={notify} />;
   else if (active === '/tickets') page = <Tickets me={me} notify={notify} onChange={(n) => setOpenTickets(n)} />;
@@ -152,7 +155,7 @@ export default function App() {
   else if (active.startsWith('/repair/')) page = <RepairDetail id={active.split('/')[2]} me={me} notify={notify} />;
   else if (active === '/users' && me.role === 'admin') page = <Users me={me} notify={notify} />;
   else if (active === '/guide') page = <Guide section={query.get('s')} />;
-  else page = <NewVisit me={me} notify={notify} />;
+  else page = <NewVisit me={me} notify={notify} refreshMe={refreshMe} />;
 
   const logout = async () => { await api('auth/logout', { method: 'POST' }); setMe(null); go('/'); };
 
@@ -213,6 +216,9 @@ export default function App() {
                   <span>🧪 โหมดทดสอบ<br /><span className="text-xs text-neutral-500">ลองใช้แอปโดยไม่บันทึกเข้าข้อมูลจริง</span></span>
                 </label>
               )}
+              <button onClick={() => setEditPhone(true)} className="w-full text-left p-2 rounded-lg hover:bg-neutral-100">
+                📞 เบอร์โทรของฉัน<br /><span className={`text-xs ${me.phone ? 'text-neutral-500' : 'text-lvred'}`}>{me.phone || 'ยังไม่ได้ใส่'}</span>
+              </button>
               <a href="#/guide" className="block p-2 rounded-lg hover:bg-neutral-100">📖 คู่มือการใช้งาน</a>
               <div className="px-2 pb-2 text-xs text-neutral-500">{me.email}</div>
               <img src="buu-eng-logo.png" alt="มหาวิทยาลัยบูรพา คณะวิศวกรรมศาสตร์" className="h-8 mx-2 mb-2" />
@@ -241,6 +247,7 @@ export default function App() {
         </div>
       </nav>
 
+      {editPhone && <PhonePrompt me={me} skipLabel="ยกเลิก" onSaved={refreshMe} onDone={(ok) => { setEditPhone(false); if (ok) notify('บันทึกเบอร์แล้ว'); }} />}
       {toast && <div className="fixed bottom-24 inset-x-4 z-[1100] mx-auto max-w-sm rounded-xl bg-ink text-white px-4 py-3 text-center shadow-lg">{toast}</div>}
     </div>
   );

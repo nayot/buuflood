@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.6.0 — 2026-10-10
+
+Requested in the field on the first volunteer day.
+
+- **Jobs page (งาน): a search box and a count.** Search by name, address, phone, need or the name of whoever took the
+  job (several words must all match). The count reads "12 งาน", or "แสดง 3 จาก 12 งาน" when a filter or search is on.
+- **Volunteers' own phone numbers.** ⋯ → 📞 เบอร์โทรของฉัน. While none is saved, the app asks when a visit is saved
+  (it can be skipped, e.g. without a signal, and asks again next time). The number is stored encrypted on the account
+  (`users.phone_enc`) and shown on the visit (บันทึกโดย … 📞) and to admins on the users page (searchable).
+- **The login page lists the allowed domains from the server** (`ALLOWED_DOMAINS`), so adding one, such as
+  `gmail.com`, needs only the setting and a restart.
+
 ## 2.5.0 — 2026-10-10
 
 Requested in the field on the first volunteer day.

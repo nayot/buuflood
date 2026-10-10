@@ -29,6 +29,9 @@ User-facing documentation is in README.md; this file covers conventions only.
   `unknown`). Never resend once
   `status = sent`. The mental ticket closes as `referred` only when the villager has sent the code. Contacts and the
   LINE user id are stored encrypted; the brief is rendered at send time. `LINE_API_BASE` points tests at a mock.
+- **Volunteer phone:** `users.phone_enc` (encrypted), always read and written on `prodDb` (it is account data, not test
+  data, and sandbox user rows don't copy it). `POST api/me/phone`; `/api/me`, `/api/users` and the visit's `creator` carry it.
+- **Sign-in domains:** `ALLOWED_DOMAINS` (`/api/me` returns them to the login page). New accounts are volunteers.
 - **Purging data:** `scripts/purge.js --all --yes` or `--older-than N` deletes visits (tickets, updates and photo rows
   cascade), photo files and (with `--all`) check-ins, and keeps users. In Docker: `docker compose exec app node scripts/purge.js …`.
 - **Specialties:** `users.specialty` is a comma-separated list (`electrical,structural`). Always read it through

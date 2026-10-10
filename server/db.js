@@ -116,6 +116,10 @@ function migrate(d) {
     d.exec('ALTER TABLE visits ADD COLUMN email_enc TEXT');
     d.exec('ALTER TABLE visits ADD COLUMN no_contact INTEGER NOT NULL DEFAULT 0');
   }
+  if (!hasColumn('users', 'phone_enc')) {
+    // v2.6: the volunteer's own phone (encrypted), so the team and responders can reach them. Read from prodDb only.
+    d.exec('ALTER TABLE users ADD COLUMN phone_enc TEXT');
+  }
   if (!hasColumn('visits', 'repair_needs')) {
     // v2.3: items listed during a home visit are a survey of needs, not Fixing Centre registrations (no queue number;
     // the owner registers at the centre). JSON array of { uuid, type, type_other, brand, problem }; their photos are

@@ -4,6 +4,7 @@ import { contactError } from '../../../shared/contact.js';
 import { Section, Field, Check, LevelBadge } from '../components/ui.jsx';
 import { getPosition, uuid } from '../lib/device.js';
 import { enqueue } from '../lib/outbox.js';
+import PhonePrompt from '../components/PhonePrompt.jsx';
 import { api, mapsLink, geocode } from '../lib/api.js';
 import PinPicker from '../components/PinPicker.jsx';
 import MentalScreen, { blankMental } from '../components/MentalScreen.jsx';
@@ -26,7 +27,8 @@ const blank = () => ({
   notes: '',
 });
 
-export default function NewVisit({ me, notify }) {
+export default function NewVisit({ me, notify, refreshMe }) {
+  const [askPhone, setAskPhone] = useState(null); // resolve() of the pending "your phone" question
   const [v, setV] = useState(blank);
   const [pos, setPos] = useState(null);
   const [posErr, setPosErr] = useState(null);
@@ -85,6 +87,8 @@ export default function NewVisit({ me, notify }) {
     const ip = itemsProblem(items, { photos: false });
     if (ip) return notify(ip);
     if (!byAddress && !pos && !confirm('ยังไม่มีตำแหน่ง GPS บันทึกต่อหรือไม่?')) return;
+    if (!me.phone) await new Promise((resolve) => setAskPhone(() => resolve));
+    setAskPhone(null);
     setSaving(true);
     try {
       localStorage.setItem('area', JSON.stringify(Object.fromEntries(AREA_KEYS.map((k) => [k, v.address[k]]))));
@@ -115,6 +119,7 @@ export default function NewVisit({ me, notify }) {
 
   return (
     <form onSubmit={submit} className="space-y-3">
+      {askPhone && <PhonePrompt me={me} onSaved={refreshMe} onDone={() => askPhone()} skipLabel="ข้ามไปก่อน บันทึกการเยี่ยมบ้านต่อ" />}
       <h1 className="text-xl font-bold px-1">บันทึกการเยี่ยมบ้าน</h1>
 
       <Section title="1. ตำแหน่งบ้าน">

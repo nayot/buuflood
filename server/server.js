@@ -143,11 +143,20 @@ const need = (...roles) => (req, res, next) => {
 };
 
 app.get('/api/me', (req, res) => {
-  if (!req.user) return res.json({ user: null, devAuth: DEV_AUTH });
+  if (!req.user) return res.json({ user: null, devAuth: DEV_AUTH, domains: DOMAINS });
   const { id, email, name, picture, role, specialty } = req.user;
   res.json({ user: { id, email, name, picture, role, specialty, specialties: parseSpecialties(specialty), realRole: req.prodUser.role,
+    phone: decrypt(req.prodUser.phone_enc),
     line_oa: lineEnabled ? LINE_OA : null },
     test: req.test ? { until: req.session.testUntil } : null, emergency: EMERGENCY });
+});
+
+// The volunteer's own phone. Kept on the production account in either mode (it is not test data).
+app.post('/api/me/phone', need(), (req, res) => {
+  const phone = cleanPhone(req.body?.phone);
+  if (phone.replace(/\D/g, '').length < 9) return res.status(400).json({ error: 'เบอร์โทรศัพท์ไม่ครบ' });
+  prodDb.prepare('UPDATE users SET phone_enc = ? WHERE id = ?').run(encrypt(phone), req.prodUser.id);
+  res.json({ ok: true, phone });
 });
 
 // ---------------------------------------------------------------- admin test mode
@@ -360,6 +369,7 @@ app.get('/api/visits/:id', need(), (req, res) => {
   out.tickets = db.prepare(`SELECT t.*, u.name AS assignee_name FROM tickets t LEFT JOIN users u ON u.id = t.assignee_id WHERE visit_id = ?`).all(v.id);
   out.repairs = itemsOfVisit(v.id);
   out.creator = db.prepare('SELECT name, email FROM users WHERE id = ?').get(v.created_by);
+  if (out.creator) out.creator.phone = decrypt(prodDb.prepare('SELECT phone_enc FROM users WHERE id = ?').get(v.created_by)?.phone_enc);
   out.line_referral = seesMentalDetail(req.user, v) ? referralOfVisit(db, v.id) : null;
   res.json(out);
 });
@@ -487,7 +497,9 @@ app.get('/api/dashboard', need('responder', 'office', 'admin'), (req, res) => {
 // ---------------------------------------------------------------- users (admin)
 
 app.get('/api/users', need('admin'), (req, res) => {
-  res.json(db.prepare('SELECT id, email, name, role, specialty, last_login FROM users ORDER BY role, name').all());
+  const phones = new Map(prodDb.prepare('SELECT id, phone_enc FROM users').all().map((u) => [u.id, decrypt(u.phone_enc)]));
+  res.json(db.prepare('SELECT id, email, name, role, specialty, last_login FROM users ORDER BY role, name').all()
+    .map((u) => ({ ...u, phone: phones.get(u.id) || null })));
 });
 
 app.patch('/api/users/:id', need('admin'), (req, res) => {
