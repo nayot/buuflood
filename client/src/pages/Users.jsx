@@ -3,9 +3,9 @@ import { api, timeAgo } from '../lib/api.js';
 import { SPECIALTIES, parseSpecialties } from '../../../shared/triage.js';
 import { Empty, Check } from '../components/ui.jsx';
 
-const ROLES = { volunteer: 'อาสาสมัคร', responder: 'ผู้เชี่ยวชาญ', fixer: 'ช่างซ่อม (ศูนย์ซ่อม)', office: 'เจ้าหน้าที่ (อบต./ศูนย์ช่วยเหลือ)', admin: 'ผู้ดูแลระบบ' };
+const ROLES = { pending: 'รออนุมัติ (ยังใช้งานไม่ได้)', volunteer: 'อาสาสมัคร', responder: 'ผู้เชี่ยวชาญ', fixer: 'ช่างซ่อม (ศูนย์ซ่อม)', office: 'เจ้าหน้าที่ (อบต./ศูนย์ช่วยเหลือ)', admin: 'ผู้ดูแลระบบ' };
 
-export default function Users({ me, notify }) {
+export default function Users({ me, notify, refreshMe }) {
   const [rows, setRows] = useState(null);
   const [q, setQ] = useState('');
   const load = () => api('api/users').then(setRows).catch(() => setRows([]));
@@ -13,7 +13,7 @@ export default function Users({ me, notify }) {
 
   const save = async (u, patch) => {
     const next = { role: u.role, specialty: u.specialty, ...patch };
-    try { await api(`api/users/${u.id}`, { method: 'PATCH', body: next }); notify('บันทึกแล้ว'); load(); }
+    try { await api(`api/users/${u.id}`, { method: 'PATCH', body: next }); notify('บันทึกแล้ว'); load(); if (u.role === 'pending' || next.role === 'pending') refreshMe?.(); }
     catch { notify('บันทึกไม่สำเร็จ'); }
   };
 
@@ -22,10 +22,10 @@ export default function Users({ me, notify }) {
   return (
     <div className="space-y-3">
       <h1 className="text-xl font-bold px-1">ผู้ใช้และสิทธิ์</h1>
-      <p className="text-sm text-neutral-500 px-1">ผู้ใช้ใหม่เป็นอาสาสมัครโดยอัตโนมัติเมื่อเข้าสู่ระบบครั้งแรก กำหนดผู้เชี่ยวชาญพร้อมด้านที่รับผิดชอบได้ที่นี่</p>
+      <p className="text-sm text-neutral-500 px-1">ผู้ใช้ใหม่เป็นอาสาสมัครโดยอัตโนมัติเมื่อเข้าสู่ระบบครั้งแรก ยกเว้นบัญชีภายนอก (เช่น @gmail.com) ซึ่งต้อง “รออนุมัติ”: ตรวจว่าเป็นใคร (โทรตามเบอร์ที่ให้ไว้) แล้วเลือกบทบาทเพื่ออนุมัติ กำหนดผู้เชี่ยวชาญพร้อมด้านที่รับผิดชอบได้ที่นี่</p>
       <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาชื่อ อีเมล หรือเบอร์โทร" />
       {rows === null ? <Empty>กำลังโหลด…</Empty> : shown.map((u) => (
-        <div key={u.id} className="card space-y-2">
+        <div key={u.id} className={`card space-y-2 ${u.role === 'pending' ? 'border-2 border-lvred' : ''}`}>
           <div>
             <div className="font-semibold">{u.name}</div>
             <div className="text-xs text-neutral-500">{u.email} · เข้าใช้ {timeAgo(u.last_login)}</div>

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.7.0 — 2026-10-10
+
+- **Accounts from `APPROVAL_DOMAINS` (gmail.com on the project's server) wait for an admin's approval.** They start as
+  "รออนุมัติ" (`pending`), see a waiting screen where they can add their phone, and every other API call answers 403
+  until an admin picks a role on the users page. Pending accounts are listed first with a red frame, and the 👥 tab
+  shows how many are waiting (counted when the app loads). BUU accounts still start as volunteers.
+
 ## 2.6.0 — 2026-10-10
 
 Requested in the field on the first volunteer day.

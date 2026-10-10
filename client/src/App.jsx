@@ -6,6 +6,7 @@ import { getPosition } from './lib/device.js';
 import { go } from './lib/nav.js';
 import Login from './pages/Login.jsx';
 import PhonePrompt from './components/PhonePrompt.jsx';
+import Pending from './pages/Pending.jsx';
 import NewVisit from './pages/NewVisit.jsx';
 import MyVisits from './pages/MyVisits.jsx';
 import VisitDetail from './pages/VisitDetail.jsx';
@@ -30,7 +31,7 @@ function useHash() {
   return { path: p || '/', query: new URLSearchParams(q || '') };
 }
 
-const ROLE_LABEL = { volunteer: 'อาสาสมัคร', responder: 'ผู้เชี่ยวชาญ', fixer: 'ช่างซ่อม', office: 'เจ้าหน้าที่', admin: 'ผู้ดูแลระบบ' };
+const ROLE_LABEL = { pending: 'รออนุมัติ', volunteer: 'อาสาสมัคร', responder: 'ผู้เชี่ยวชาญ', fixer: 'ช่างซ่อม', office: 'เจ้าหน้าที่', admin: 'ผู้ดูแลระบบ' };
 
 // Roles an admin can try out in test mode ("responder:electrical" = responder with that one specialty).
 const TEST_ROLES = [
@@ -68,7 +69,7 @@ function tabsFor(role) {
   if (['responder', 'office', 'admin'].includes(role)) t.push({ to: '/tickets', label: 'งาน', icon: '🛠️', badge: true });
   if (['responder', 'office', 'admin'].includes(role)) t.push({ to: '/map', label: 'แผนที่', icon: '🗺️' });
   if (['fixer', 'office', 'admin'].includes(role)) t.push({ to: '/repairs', label: 'ศูนย์ซ่อม', icon: '🔧' });
-  if (role === 'admin') t.push({ to: '/users', label: 'ผู้ใช้', icon: '👥' });
+  if (role === 'admin') t.push({ to: '/users', label: 'ผู้ใช้', icon: '👥', pendingBadge: true });
   return t;
 }
 
@@ -140,6 +141,7 @@ export default function App() {
   if (me === undefined) return <div className="p-8 text-center text-neutral-500">กำลังโหลด…</div>;
   if (!me && path === '/guide') return <Guide standalone section={query.get('s')} />;
   if (!me) return <Login error={query.get('error')} devAuth={devAuth} domains={domains} />;
+  if (me.realRole === 'pending') return <Pending me={me} onRefresh={refreshMe} />;
 
   const tabs = tabsFor(me.role);
   const home = me.role === 'fixer' ? '/repairs' : tabs.find((t) => t.to === '/tickets') ? '/tickets' : '/new';
@@ -153,7 +155,7 @@ export default function App() {
   else if (active === '/map') page = <Dashboard me={me} />;
   else if (active === '/repairs' && ['fixer', 'office', 'admin'].includes(me.role)) page = <Repairs notify={notify} view={query.get('view') || 'list'} />;
   else if (active.startsWith('/repair/')) page = <RepairDetail id={active.split('/')[2]} me={me} notify={notify} />;
-  else if (active === '/users' && me.role === 'admin') page = <Users me={me} notify={notify} />;
+  else if (active === '/users' && me.role === 'admin') page = <Users me={me} notify={notify} refreshMe={refreshMe} />;
   else if (active === '/guide') page = <Guide section={query.get('s')} />;
   else page = <NewVisit me={me} notify={notify} refreshMe={refreshMe} />;
 
@@ -240,6 +242,9 @@ export default function App() {
               {t.label}
               {t.badge && openTickets > 0 && (
                 <span className="absolute top-1 right-[22%] min-w-5 h-5 px-1 rounded-full bg-lvred text-white text-[11px] grid place-items-center">{openTickets}</span>
+              )}
+              {t.pendingBadge && me.pending_users > 0 && (
+                <span className="absolute top-1 right-[22%] min-w-5 h-5 px-1 rounded-full bg-lvred text-white text-[11px] grid place-items-center">{me.pending_users}</span>
               )}
               {active === t.to && <span className="absolute top-0 inset-x-6 h-1 rounded-b bg-gold" />}
             </a>

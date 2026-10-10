@@ -26,6 +26,9 @@ const PORT = Number(process.env.PORT || 3000);
 const PUBLIC_URL = (process.env.PUBLIC_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
 const BASE_PATH = new URL(PUBLIC_URL).pathname.replace(/\/$/, '') || '';
 const DOMAINS = (process.env.ALLOWED_DOMAINS || 'go.buu.ac.th,eng.buu.ac.th').split(',').map((s) => s.trim().toLowerCase());
+// New accounts from these domains start as `pending` and can do nothing until an admin gives them a role
+// (e.g. gmail.com, which anyone can have).
+const APPROVAL_DOMAINS = (process.env.APPROVAL_DOMAINS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 const ADMINS = (process.env.ADMIN_EMAILS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 const DEV_AUTH = !PROD && process.env.DEV_AUTH === '1';
 // Local numbers for the red mental-health panel, e.g. "ผู้ประสานงานภาคสนาม=0812345678;รพ.ท่าใหม่=039xxxxxx".
@@ -93,7 +96,7 @@ function upsertUser({ email, name, picture }) {
       .run(name || existing.name, picture || existing.picture, role, existing.id);
     return existing.id;
   }
-  const role = ADMINS.includes(email) ? 'admin' : 'volunteer';
+  const role = ADMINS.includes(email) ? 'admin' : APPROVAL_DOMAINS.includes(email.split('@')[1]) ? 'pending' : 'volunteer';
   return Number(prodDb.prepare("INSERT INTO users (email, name, picture, role, last_login) VALUES (?, ?, ?, ?, datetime('now'))")
     .run(email, name || email, picture || null, role).lastInsertRowid);
 }
@@ -138,6 +141,7 @@ app.post('/auth/logout', (req, res) => { req.session = null; res.json({ ok: true
 
 const need = (...roles) => (req, res, next) => {
   if (!req.user) return res.status(401).json({ error: 'login' });
+  if (req.prodUser.role === 'pending') return res.status(403).json({ error: 'pending' });
   if (roles.length && !roles.includes(req.user.role)) return res.status(403).json({ error: 'forbidden' });
   next();
 };
@@ -147,12 +151,15 @@ app.get('/api/me', (req, res) => {
   const { id, email, name, picture, role, specialty } = req.user;
   res.json({ user: { id, email, name, picture, role, specialty, specialties: parseSpecialties(specialty), realRole: req.prodUser.role,
     phone: decrypt(req.prodUser.phone_enc),
+    pending_users: req.prodUser.role === 'admin' ? prodDb.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'pending'").get().n : 0,
     line_oa: lineEnabled ? LINE_OA : null },
     test: req.test ? { until: req.session.testUntil } : null, emergency: EMERGENCY });
 });
 
 // The volunteer's own phone. Kept on the production account in either mode (it is not test data).
-app.post('/api/me/phone', need(), (req, res) => {
+// Pending accounts may add theirs too, so the admin can check who is asking.
+app.post('/api/me/phone', (req, res) => {
+  if (!req.user) return res.status(401).json({ error: 'login' });
   const phone = cleanPhone(req.body?.phone);
   if (phone.replace(/\D/g, '').length < 9) return res.status(400).json({ error: 'เบอร์โทรศัพท์ไม่ครบ' });
   prodDb.prepare('UPDATE users SET phone_enc = ? WHERE id = ?').run(encrypt(phone), req.prodUser.id);
@@ -498,13 +505,13 @@ app.get('/api/dashboard', need('responder', 'office', 'admin'), (req, res) => {
 
 app.get('/api/users', need('admin'), (req, res) => {
   const phones = new Map(prodDb.prepare('SELECT id, phone_enc FROM users').all().map((u) => [u.id, decrypt(u.phone_enc)]));
-  res.json(db.prepare('SELECT id, email, name, role, specialty, last_login FROM users ORDER BY role, name').all()
+  res.json(db.prepare("SELECT id, email, name, role, specialty, last_login FROM users ORDER BY role != 'pending', role, name").all()
     .map((u) => ({ ...u, phone: phones.get(u.id) || null })));
 });
 
 app.patch('/api/users/:id', need('admin'), (req, res) => {
   const { role, specialty } = req.body || {};
-  if (!['volunteer', 'responder', 'fixer', 'office', 'admin'].includes(role)) return res.status(400).json({ error: 'role' });
+  if (!['pending', 'volunteer', 'responder', 'fixer', 'office', 'admin'].includes(role)) return res.status(400).json({ error: 'role' });
   const list = role === 'responder' ? parseSpecialties(specialty).join(',') || null : null;
   db.prepare('UPDATE users SET role = ?, specialty = ? WHERE id = ?').run(role, list, Number(req.params.id));
   res.json({ ok: true });

@@ -33,7 +33,8 @@ Volunteer visits a house ──► needs + 2Q/9Q/8Q + GPS/address ──► tria
 | `admin` | Everything, plus assigning roles and a test mode |
 
 - **Sign-in:** Google, limited to the domains in `ALLOWED_DOMAINS` (default `@go.buu.ac.th` and `@eng.buu.ac.th`; the
-  project's server also allows `@gmail.com` from 2.6.0). New accounts are volunteers and see only their own visits.
+  project's server also allows `@gmail.com`). New accounts are volunteers and see only their own visits; accounts from
+  `APPROVAL_DOMAINS` (the project uses `gmail.com`) wait as "รออนุมัติ" until an admin gives them a role.
 - **Triage rules:** `shared/triage.js` — shared by the phone (live preview) and the server.
   Volunteers can override the level with a reason. The 2Q/9Q/8Q screening and its red/yellow/green rules are in
   `shared/mental.js`; it runs whenever a สุขภาพใจ need is ticked, and a red result shows tap-to-call numbers
