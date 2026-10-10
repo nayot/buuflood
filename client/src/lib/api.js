@@ -9,6 +9,8 @@ let testMode = null;
 export const setTestMode = (on) => { testMode = on; };
 export const isTestMode = () => !!testMode;
 export const MODE_CHANGED = 'buuflood:mode';
+// The admin closed the app (503 "closed"): the screen reloads /api/me and shows the closed page.
+export const APP_CLOSED = 'buuflood:closed';
 
 export async function api(path, { method = 'GET', body } = {}) {
   const opts = { method, credentials: 'same-origin', headers: {} };
@@ -18,6 +20,7 @@ export async function api(path, { method = 'GET', body } = {}) {
   const r = await fetch(path, opts);
   const data = await r.json().catch(() => ({}));
   if (r.status === 409 && data.error === 'mode') window.dispatchEvent(new Event(MODE_CHANGED));
+  if (r.status === 503 && data.error === 'closed') window.dispatchEvent(new Event(APP_CLOSED));
   if (!r.ok) throw new ApiError(r.status, data);
   return data;
 }

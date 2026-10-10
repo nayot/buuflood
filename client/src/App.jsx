@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { api, setTestMode, MODE_CHANGED } from './lib/api.js';
+import { api, setTestMode, MODE_CHANGED, APP_CLOSED } from './lib/api.js';
 import { onOutboxChange, flush, setOutboxMode, pendingIn, clearTestOutbox } from './lib/outbox.js';
 import { SPECIALTIES } from '../../shared/triage.js';
 import { getPosition } from './lib/device.js';
@@ -7,6 +7,7 @@ import { go } from './lib/nav.js';
 import Login from './pages/Login.jsx';
 import PhonePrompt from './components/PhonePrompt.jsx';
 import Pending from './pages/Pending.jsx';
+import Closed from './pages/Closed.jsx';
 import NewVisit from './pages/NewVisit.jsx';
 import MyVisits from './pages/MyVisits.jsx';
 import VisitDetail from './pages/VisitDetail.jsx';
@@ -106,6 +107,7 @@ export default function App() {
   const [devAuth, setDevAuth] = useState(false);
   const [domains, setDomains] = useState(null);
   const [editPhone, setEditPhone] = useState(false);
+  const [closed, setClosed] = useState(null); // { message, since, by } while an admin has switched the app off
   const [outbox, setOutbox] = useState(0);
   const [openTickets, setOpenTickets] = useState(0);
   const [toast, setToast] = useState(null);
@@ -114,7 +116,7 @@ export default function App() {
 
   const refreshMe = () => api('api/me').then((r) => {
     setTestMode(!!r.test); setOutboxMode(!!r.test); setTest(r.test || null);
-    setMe(r.user); setDevAuth(!!r.devAuth); setDomains(r.domains ? { allowed: r.domains, approval: r.approval || [] } : null); rememberLocalContacts(r.emergency);
+    setMe(r.user); setClosed(r.closed || null); setDevAuth(!!r.devAuth); setDomains(r.domains ? { allowed: r.domains, approval: r.approval || [] } : null); rememberLocalContacts(r.emergency);
   }).catch(() => setMe(null));
   useEffect(() => { refreshMe(); }, []);
   useEffect(() => onOutboxChange(setOutbox), []);
@@ -129,6 +131,12 @@ export default function App() {
     return () => window.removeEventListener(MODE_CHANGED, on);
   }, [notify]);
 
+  useEffect(() => {
+    const on = () => refreshMe();
+    window.addEventListener(APP_CLOSED, on);
+    return () => window.removeEventListener(APP_CLOSED, on);
+  }, []);
+
   // New-ticket badge: poll while the app is open.
   useEffect(() => {
     if (!me || !['responder', 'office', 'admin'].includes(me.role)) return;
@@ -142,6 +150,7 @@ export default function App() {
   if (!me && path === '/guide') return <Guide standalone section={query.get('s')} />;
   if (!me) return <Login error={query.get('error')} devAuth={devAuth} domains={domains} />;
   if (me.realRole === 'pending') return <Pending me={me} onRefresh={refreshMe} />;
+  if (closed && me.realRole !== 'admin') return <Closed me={me} closed={closed} outbox={outbox} onRefresh={refreshMe} />;
 
   const tabs = tabsFor(me.role);
   const home = me.role === 'fixer' ? '/repairs' : tabs.find((t) => t.to === '/tickets') ? '/tickets' : '/new';
@@ -187,6 +196,15 @@ export default function App() {
     if (!confirm('ล้างข้อมูลทดสอบทั้งหมด (บันทึก งาน สิ่งของซ่อม รูป) และบทบาทที่ตั้งไว้ในโหมดทดสอบ?')) return;
     try { await clearTestOutbox(); await api('api/test-mode/reset', { method: 'POST' }); reloadHome(); } catch (e) { notify(e.message); }
   };
+  const setAppClosed = async (off) => {
+    let message = '';
+    if (off) {
+      message = prompt('ปิดแอปสำหรับผู้ใช้ทุกคน (ยกเว้นผู้ดูแลระบบ)\nข้อความที่จะแสดง (เว้นว่างได้):', 'ปิดปรับปรุงระบบชั่วคราว');
+      if (message === null) return;
+    } else if (!confirm('เปิดแอปให้ผู้ใช้ทุกคนใช้งานได้ตามปกติ?')) return;
+    try { const r = await api('api/app-closed', { method: 'POST', body: { closed: off, message } }); setClosed(r.closed || null); notify(off ? 'ปิดแอปแล้ว' : 'เปิดแอปแล้ว'); }
+    catch (e) { notify(e.message); }
+  };
   const checkinNow = () => loc.send().then(() => notify('ส่งตำแหน่งแล้ว')).catch((e) => notify(e.message));
 
   return (
@@ -214,6 +232,12 @@ export default function App() {
               </label>
               {me.realRole === 'admin' && (
                 <label className="flex items-center gap-2 p-2">
+                  <input type="checkbox" checked={!closed} onChange={(e) => setAppClosed(!e.target.checked)} />
+                  <span>🔌 เปิดให้ผู้ใช้ใช้งานแอป<br /><span className="text-xs text-neutral-500">ปิด = ทุกคนยกเว้นผู้ดูแลระบบใช้งานไม่ได้ บันทึกที่รอส่งยังเก็บไว้ในเครื่อง</span></span>
+                </label>
+              )}
+              {me.realRole === 'admin' && (
+                <label className="flex items-center gap-2 p-2">
                   <input type="checkbox" checked={!!test} onChange={(e) => setTestOn(e.target.checked)} />
                   <span>🧪 โหมดทดสอบ<br /><span className="text-xs text-neutral-500">ลองใช้แอปโดยไม่บันทึกเข้าข้อมูลจริง</span></span>
                 </label>
@@ -229,6 +253,14 @@ export default function App() {
             </div>
           </details>
         </div>
+        {closed && (
+          <div className="bg-lvred text-white text-xs">
+            <div className="mx-auto max-w-3xl px-4 py-1.5 flex items-center gap-2">
+              <span className="flex-1 font-bold">🔌 แอปปิดอยู่: ผู้ใช้อื่นใช้งานไม่ได้{closed.message ? ` (“${closed.message}”)` : ''}</span>
+              <button onClick={() => setAppClosed(false)} className="rounded-full bg-white text-lvred px-3 py-0.5 font-bold">เปิดแอป</button>
+            </div>
+          </div>
+        )}
         {test && <TestBar me={me} test={test} onRole={setTestRole} onReset={resetTest} onOff={() => setTestOn(false)} />}
       </header>
 

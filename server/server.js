@@ -83,6 +83,21 @@ app.use((req, res, next) => {
   });
 });
 
+// ---------------------------------------------------------------- app on/off (admin switch)
+
+// While the app is closed, every API call except /api/me answers 503 for non-admins. 503, not 4xx: the phone's outbox
+// keeps queued visits and sends them once the app is open again. The LINE webhook (outside /api) keeps working.
+const appClosed = () => {
+  const v = prodDb.prepare("SELECT value FROM settings WHERE key = 'app_closed'").get()?.value;
+  return v ? JSON.parse(v) : null;
+};
+app.use('/api', (req, res, next) => {
+  if (req.path === '/me' || req.prodUser?.role === 'admin') return next();
+  const closed = appClosed();
+  if (closed) return res.status(503).json({ error: 'closed', message: closed.message || null });
+  next();
+});
+
 // ---------------------------------------------------------------- auth
 
 const domainOf = (email) => String(email).toLowerCase().split('@')[1];
@@ -156,7 +171,7 @@ app.get('/api/me', (req, res) => {
     phone: decrypt(req.prodUser.phone_enc),
     pending_users: req.prodUser.role === 'admin' ? prodDb.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'pending'").get().n : 0,
     line_oa: lineEnabled ? LINE_OA : null },
-    test: req.test ? { until: req.session.testUntil } : null, emergency: EMERGENCY });
+    test: req.test ? { until: req.session.testUntil } : null, emergency: EMERGENCY, closed: appClosed() });
 });
 
 // The volunteer's own phone. Kept on the production account in either mode (it is not test data).
@@ -172,6 +187,15 @@ app.post('/api/me/phone', (req, res) => {
 // ---------------------------------------------------------------- admin test mode
 
 const realAdmin = (req, res, next) => (req.prodUser?.role === 'admin' ? next() : res.status(403).json({ error: 'forbidden' }));
+
+app.post('/api/app-closed', realAdmin, (req, res) => {
+  if (req.body?.closed) {
+    const value = JSON.stringify({ message: String(req.body.message || '').trim().slice(0, 300) || null,
+      since: new Date().toISOString(), by: req.prodUser.name || req.prodUser.email });
+    prodDb.prepare("INSERT INTO settings (key, value) VALUES ('app_closed', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(value);
+  } else prodDb.prepare("DELETE FROM settings WHERE key = 'app_closed'").run();
+  res.json({ ok: true, closed: appClosed() });
+});
 
 app.post('/api/test-mode', realAdmin, (req, res) => {
   if (req.body?.on) {

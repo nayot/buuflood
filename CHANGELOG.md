@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.7.3 — 2026-10-10
+
+- **Admins can switch the app off and on** (⋯ → 🔌 เปิดให้ผู้ใช้ใช้งานแอป, with an optional message). While it is off,
+  everyone but admins sees "ระบบปิดชั่วคราว" with the message, and every API call except `/api/me` answers 503
+  `closed`. Visits waiting on a phone stay there (the outbox retries 5xx) and are sent once the app is open again; the
+  page says how many are waiting. Admins work as usual under a red "แอปปิดอยู่" bar with a เปิดแอป button. The LINE
+  webhook keeps answering villagers. The switch is a row in the new `settings` table of the production database.
+
 ## 2.7.2 — 2026-10-10
 
 - **The villager's nickname (ชื่อเล่น)**, optional, under the name in section 2 of a home visit (`visits.nickname`).

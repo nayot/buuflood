@@ -174,6 +174,11 @@ function migrate(d) {
   // Mental-health referrals to the BUU Flood Help LINE OA (server/line.js). A row can exist before its visit (registered
   // from the form, or the villager sent the code first); visit_id is filled in when the visit is uploaded.
   d.exec(`
+  CREATE TABLE IF NOT EXISTS settings (           -- app-wide switches; only the production database's copy is read
+    key TEXT PRIMARY KEY,
+    value TEXT
+  );
+
   CREATE TABLE IF NOT EXISTS line_referrals (
     code TEXT PRIMARY KEY,                        -- BF-XXXXX (BT- in test mode)
     created_by INTEGER REFERENCES users(id),
