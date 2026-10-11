@@ -503,8 +503,13 @@ ar.get('/visits/:id', need(), (req, res) => {
     photos: itemPhotos.all(v.id, n.uuid).map((p) => p.id) }));
   out.tickets = db.prepare(`SELECT t.*, u.name AS assignee_name FROM tickets t LEFT JOIN users u ON u.id = t.assignee_id WHERE visit_id = ?`).all(v.id);
   out.repairs = itemsOfVisit(v.id);
-  out.creator = db.prepare('SELECT name, email FROM users WHERE id = ?').get(v.created_by);
-  if (out.creator) out.creator.phone = decrypt(central.prepare('SELECT phone_enc FROM users WHERE id = ?').get(v.created_by)?.phone_enc);
+  out.creator = db.prepare('SELECT name, email, phone_enc FROM users WHERE id = ?').get(v.created_by);
+  if (out.creator) {
+    // The account's current phone; for an account that no longer exists (e.g. volunteers of a 2.x archive), the one
+    // kept in the activity's own copy.
+    const { phone_enc: kept, ...c } = out.creator;
+    out.creator = { ...c, phone: decrypt(central.prepare('SELECT phone_enc FROM users WHERE id = ?').get(v.created_by)?.phone_enc ?? kept) };
+  }
   out.line_referral = seesMentalDetail(req.user, v) ? referralOfVisit(req.activity.id, req.test, v.id) : null;
   res.json(out);
 });
