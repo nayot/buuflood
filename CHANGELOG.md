@@ -1,5 +1,34 @@
 # Changelog
 
+## 3.0.0 — 2026-10-11
+
+**Activities (กิจกรรม).** The app now runs several activities at once, each with its own members, roles, screens and
+data, e.g. a Fixing Centre day in ต.โขมง next to home visits in อ.แกลง.
+
+- **Admins** create an activity (⋯ → 🗂️ กิจกรรม) with a name, area, dates and its modules: 🏠 **เยี่ยมบ้าน** (visit form,
+  screening, jobs, map) and/or 🔧 **ศูนย์ซ่อม**. The tabs follow the modules. In a Fixing-Centre-only activity every
+  volunteer can run the centre. Queue numbers restart in each activity.
+- **Joining:** each activity has a join link and QR code (👥 สมาชิก). Volunteers scan it, sign in with Google and press
+  เข้าร่วม; they join as volunteers. The link can be closed or replaced. Accounts that need approval (e.g. @gmail.com)
+  join as รออนุมัติ, and the activity's manager approves them there.
+- **Roles are per activity:** อาสาสมัคร, ผู้เชี่ยวชาญ (with specialties), ช่างซ่อม, เจ้าหน้าที่ and the new
+  **ผู้จัดการกิจกรรม** (manager), who sees everything in their own activity, sets members' roles, runs test mode and
+  downloads its data, but sees no other activity. Admins see every activity, live or archived.
+- **Archive:** when the work is handed over, an admin archives the activity: its data becomes read-only, the join link
+  closes and volunteers no longer see it; admins and its managers can still open it. It can be reopened.
+  **ลบข้อมูลส่วนบุคคล** then removes names, contacts, house numbers, positions, notes, screening answers and photos from
+  an archived activity once follow-up is finished, keeping the statistics.
+- **Analysis:** 📊 สรุปและส่งออก, for live and archived activities: a summary (levels, needs, areas, jobs, repairs), CSV
+  downloads with or without personal data, and the activity's SQLite database (admins may add decrypted contact
+  columns). On the server each activity is its own file, `data/activities/<id>/buuflood.db`.
+- **Test mode** is per activity and open to its managers too; ทดสอบเป็น includes ผู้จัดการ.
+- 🪪 **บัญชีผู้ใช้** (admins) lists every account with its activities; approve, make admin or delete.
+- A visit queued on a phone goes to the activity it was recorded in. If that activity was archived meanwhile, it stays
+  on the phone as "ส่งไม่ได้: กิจกรรมนี้ปิดแล้ว" instead of being lost.
+- **Upgrade:** on first start the 2.x data becomes archived activity 1, "เยี่ยมบ้าน ต.โขมง 10–11 ต.ค. 2569", with every
+  visit kept; only admin accounts carry over, so volunteers rejoin through the new activities' links. LINE referrals
+  move to the central database and the 2.x test data is deleted. `scripts/purge.js` now takes `--activity <id>`.
+
 ## 2.7.6 — 2026-10-10
 
 - **Announcements.** Admins send one from ⋯ → 📢 ส่งประกาศ. It pops up on every signed-in phone (also accounts waiting

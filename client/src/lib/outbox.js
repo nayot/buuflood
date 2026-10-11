@@ -1,9 +1,12 @@
 // Visits are saved to the phone first (IndexedDB) and uploaded when there is signal.
 // The server ignores a visit whose uuid it already has, so retries never create duplicates.
 import { get, set } from 'idb-keyval';
+import { currentActivity } from './api.js';
 
 // Admin test mode has its own outbox, and each queued visit carries its mode: the server only accepts it in that
 // mode (409 otherwise), so a test visit can never be uploaded into the real data, nor a real one into the test data.
+// 3.0: each queued visit also carries its activity and is sent to that activity, whichever one the screen shows.
+// An archived activity answers 409: the visit stays on the phone (shown as waiting) for a manager to sort out.
 const KEYS = { false: 'outbox', true: 'outbox-test' };
 let test = false;
 const listeners = new Set();
@@ -32,7 +35,7 @@ export async function clearTestOutbox() {
 /** `itemPhotos` maps a repair item's uuid to its photo blobs; they are sent as files named "item_<uuid>". */
 export async function enqueue(data, photos, itemPhotos = {}) {
   const items = await read();
-  items.push({ uuid: data.uuid, data: { ...data, test }, photos, itemPhotos, tries: 0, queuedAt: Date.now() });
+  items.push({ uuid: data.uuid, data: { ...data, test, activity: currentActivity() }, photos, itemPhotos, tries: 0, queuedAt: Date.now() });
   await write(items);
   return flush();
 }
@@ -54,10 +57,15 @@ export async function flush() {
       let ok = false;
       let rejected = null;
       try {
-        const r = await fetch('api/visits', { method: 'POST', body: fd, credentials: 'same-origin' });
+        const aid = item.data.activity ?? currentActivity();
+        const r = await fetch(`api/a/${aid}/visits`, { method: 'POST', body: fd, credentials: 'same-origin' });
         if (r.ok) { saved.push({ uuid: item.uuid, ...(await r.json()) }); ok = true; }
         else if (r.status === 401) break; // logged out: keep everything until they log in again
-        else if (r.status === 409) break; // queued in the other mode: keep it until the phone is back in that mode
+        else if (r.status === 409) {
+          const why = (await r.json().catch(() => ({}))).error;
+          if (why === 'archived') { const all = await read(mode); const x = all.find((i) => i.uuid === item.uuid); if (x) { x.blocked = 'กิจกรรมนี้ปิดแล้ว'; await set(KEYS[mode], all); } continue; }
+          break; // queued in the other mode: keep it until the phone is back in that mode
+        }
         else if (r.status >= 400 && r.status < 500) rejected = (await r.json().catch(() => ({}))).error || `HTTP ${r.status}`;
       } catch { /* network error: keep it and retry later */ }
       const items = await read(mode);

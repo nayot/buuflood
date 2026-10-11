@@ -6,7 +6,10 @@ import { encrypt, decrypt } from './crypto.js';
 import { REPAIR_TYPES, REPAIR_STATUS, ITEM_PHOTOS_MAX, ITEMS_MAX, queueNo } from '../shared/repairs.js';
 import { contactError, cleanPhone, cleanLine, cleanEmail } from '../shared/contact.js';
 
-export const STAFF = ['fixer', 'office', 'admin'];
+// Who runs the centre: fixers, office staff and the activity's leads, and every member when the activity is a Fixing
+// Centre day without home visits (set as req.user.repairStaff by the activity middleware in server.js).
+export const repairStaff = (role, modules) => ['fixer', 'office', 'manager', 'admin'].includes(role)
+  || (role === 'volunteer' && !modules.includes('visits'));
 const TYPE_ORDER = Object.keys(REPAIR_TYPES);
 const str = (v, max = 200) => (v == null || String(v).trim() === '' ? null : String(v).trim().slice(0, max));
 const AREA_KEYS = ['moo', 'village', 'tambon', 'amphoe', 'province'];
@@ -65,7 +68,7 @@ export const itemsOfVisit = (visitId) =>
 
 function canSee(user, item) {
   if (!user || !item) return false;
-  if (STAFF.includes(user.role) || item.created_by === user.id) return true;
+  if (user.repairStaff || item.created_by === user.id) return true;
   return !!(item.visit_id && db.prepare('SELECT 1 FROM visits WHERE id = ? AND created_by = ?').get(item.visit_id, user.id));
 }
 
@@ -86,11 +89,12 @@ const csvCell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
 // SQLite stores UTC; the report shows Thai local time.
 const local = (t) => (t ? new Date(`${t.replace(' ', 'T')}Z`).toLocaleString('sv-SE', { timeZone: 'Asia/Bangkok' }) : '');
 
-export function mountRepairs(app, { need, upload }) {
-  app.get('/api/repairs', need(...STAFF), (req, res) => res.json(listItems(req.query)));
+export function mountRepairs(app, { need, upload, mod }) {
+  const staff = (req, res, next) => (req.user?.repairStaff ? next() : res.status(403).json({ error: 'forbidden' }));
+  app.get('/repairs', need(), mod('repairs'), staff, (req, res) => res.json(listItems(req.query)));
 
   // Report: every item, grouped by type and in queue order. UTF-8 BOM so Excel reads the Thai.
-  app.get('/api/repairs/report.csv', need(...STAFF), (req, res) => {
+  app.get('/repairs/report.csv', need(), mod('repairs'), staff, (req, res) => {
     const head = ['เลขคิว', 'ประเภท', 'ระบุประเภท', 'ยี่ห้อ/รุ่น', 'อาการ', 'สถานะ', 'เจ้าของ', 'โทรศัพท์', 'LINE', 'อีเมล',
       'หมู่', 'หมู่บ้าน', 'ตำบล', 'อำเภอ', 'จังหวัด', 'ลงทะเบียน', 'อัปเดตล่าสุด', 'บันทึกเยี่ยมบ้าน'];
     const lines = listItems(req.query).map((r) => [r.queue, r.type_label, r.type_other, r.brand, r.problem, REPAIR_STATUS[r.status],
@@ -101,24 +105,24 @@ export function mountRepairs(app, { need, upload }) {
       .send(`﻿${[head.map(csvCell).join(','), ...lines].join('\r\n')}\r\n`);
   });
 
-  app.get('/api/repairs/:id', need(), (req, res) => {
+  app.get('/repairs/:id', need(), (req, res) => {
     const r = db.prepare('SELECT * FROM repair_items WHERE id = ?').get(Number(req.params.id));
     if (!canSee(req.user, r)) return res.status(404).json({ error: 'not found' });
     const out = serializeItem(r);
     out.creator = db.prepare('SELECT name FROM users WHERE id = ?').get(r.created_by)?.name;
     out.updates = db.prepare('SELECT ru.*, u.name FROM repair_updates ru JOIN users u ON u.id = ru.user_id WHERE item_id = ? ORDER BY ru.id').all(r.id);
-    out.can_update = STAFF.includes(req.user.role);
+    out.can_update = !!req.user.repairStaff;
     res.json(out);
   });
 
-  app.get('/api/repair-photos/:id', need(), (req, res) => {
+  app.get('/repair-photos/:id', need(), (req, res) => {
     const p = db.prepare('SELECT p.filename, r.* FROM repair_photos p JOIN repair_items r ON r.id = p.item_id WHERE p.id = ?').get(Number(req.params.id));
     if (!p || !canSee(req.user, p)) return res.status(404).end();
     res.sendFile(path.join(req.uploadDir, path.basename(p.filename)));
   });
 
   // Walk-in at the centre: owner + items in one request. Online only, so the queue numbers come back at once.
-  app.post('/api/repairs', need(...STAFF), upload, (req, res) => {
+  app.post('/repairs', need(), mod('repairs'), staff, upload, (req, res) => {
     const files = req.files || [];
     let d;
     try { d = JSON.parse(req.body.data || '{}'); } catch { removeFiles(files); return res.status(400).json({ error: 'bad data' }); }
@@ -159,7 +163,7 @@ export function mountRepairs(app, { need, upload }) {
     }
   });
 
-  app.post('/api/repairs/:id/update', need(...STAFF), (req, res) => {
+  app.post('/repairs/:id/update', need(), mod('repairs'), staff, (req, res) => {
     const r = db.prepare('SELECT * FROM repair_items WHERE id = ?').get(Number(req.params.id));
     if (!r) return res.status(404).json({ error: 'not found' });
     const status = req.body?.status in REPAIR_STATUS ? req.body.status : r.status;

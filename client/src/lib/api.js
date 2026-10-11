@@ -12,7 +12,18 @@ export const MODE_CHANGED = 'buuflood:mode';
 // The admin closed the app (503 "closed"): the screen reloads /api/me and shows the closed page.
 export const APP_CLOSED = 'buuflood:closed';
 
+// 3.0: everything about one activity is under api/a/<id>/…; the app sets the activity it shows. Account-wide calls
+// (GLOBAL) are left as they are. Use aurl() for links and images (photos, CSV) so they carry the activity too.
+let activityId = null;
+export const setActivity = (id) => { activityId = id ?? null; };
+export const currentActivity = () => activityId;
+const GLOBAL = /^api\/(me|announcements|app-closed|activities|users|join|a)(\/|$|\?)/;
+export const aurl = (path, id = activityId) => (path.startsWith('api/') && !GLOBAL.test(path) && id != null ? `api/a/${id}/${path.slice(4)}` : path);
+// The activity was archived, or this account was removed from it (403 member/archived): the app reloads its list.
+export const ACTIVITY_GONE = 'buuflood:activity';
+
 export async function api(path, { method = 'GET', body } = {}) {
+  path = aurl(path);
   const opts = { method, credentials: 'same-origin', headers: {} };
   if (testMode != null) opts.headers['X-Test-Mode'] = testMode ? '1' : '0';
   if (body instanceof FormData) opts.body = body;
@@ -21,6 +32,9 @@ export async function api(path, { method = 'GET', body } = {}) {
   const data = await r.json().catch(() => ({}));
   if (r.status === 409 && data.error === 'mode') window.dispatchEvent(new Event(MODE_CHANGED));
   if (r.status === 503 && data.error === 'closed') window.dispatchEvent(new Event(APP_CLOSED));
+  if ((r.status === 403 && ['member', 'archived'].includes(data.error)) || (r.status === 409 && data.error === 'archived')) {
+    window.dispatchEvent(new Event(ACTIVITY_GONE));
+  }
   if (!r.ok) throw new ApiError(r.status, data);
   return data;
 }

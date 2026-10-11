@@ -8,11 +8,11 @@
 // registration is the main path. If the code arrives first (no signal at the house), the bot replies with the greeting
 // for a level not yet known and pushes the brief once the visit is uploaded.
 //
-// Test-mode codes start with BT- and live in the sandbox database: the webhook has no session, so it picks the
-// database from the code. Every function here takes the database explicitly; nothing runs on the request proxy after
-// an await.
+// 3.0: referrals live in the central database with the activity they belong to (the webhook has no session and only
+// sees the code). The ticket they close is in that activity's database, or its sandbox for test-mode codes (BT-).
+// Nothing here uses the request's `db` proxy.
 import crypto from 'node:crypto';
-import { prodDb, sandboxDb, json } from './db.js';
+import { central, activityDb, sandboxDb, getActivity, isReadOnly, json } from './db.js';
 import { encrypt, decrypt } from './crypto.js';
 import { scoreMental, cleanMental } from '../shared/mental.js';
 import { cleanPhone, cleanLine } from '../shared/contact.js';
@@ -72,37 +72,47 @@ const text = (t) => ({ type: 'text', text: t.slice(0, 5000) });
 // ---------------------------------------------------------------- referrals
 
 const isTest = (code) => code.startsWith('BT-');
-const dbFor = (code) => (isTest(code) ? sandboxDb() : prodDb);
-
-const getRef = (d, code) => d.prepare(`SELECT r.*, u.name AS volunteer FROM line_referrals r
-  LEFT JOIN users u ON u.id = r.created_by WHERE r.code = ?`).get(code);
+const getRef = (code) => central.prepare('SELECT * FROM line_referrals WHERE code = ?').get(code);
 
 /** Mental summary kept with the referral (the brief is rendered at send time, so no plaintext contacts are stored). */
 export const mentalOf = (scored) => JSON.stringify({ level: scored.level, summary: scored.summary, q9: scored.q9, q8: scored.q8, flags: scored.flags });
+
+/** 'code taken' when the code already belongs to another volunteer or activity, else null. */
+export function referralConflict(code, { activityId, userId }) {
+  const r = central.prepare('SELECT created_by, activity_id FROM line_referrals WHERE code = ?').get(code);
+  if (r?.created_by && (r.created_by !== userId || (r.activity_id && r.activity_id !== activityId))) return 'code taken';
+  return null;
+}
 
 /**
  * Create or refresh a referral's details. `fromVisit` details win over the early registration, and the LINE side
  * (user, status) is never touched here. Returns null, or an error code for a 4xx.
  */
-export function upsertReferral(d, { code, userId, visitId = null, visitUuid = null, person, mental }) {
-  const existing = d.prepare('SELECT created_by, visit_id FROM line_referrals WHERE code = ?').get(code);
-  if (existing?.created_by && existing.created_by !== userId) return 'code taken';
+export function upsertReferral({ code, activityId, test, user, visitId = null, visitUuid = null, person, mental }) {
+  const conflict = referralConflict(code, { activityId, userId: user.id });
+  if (conflict) return conflict;
+  const existing = central.prepare('SELECT visit_id FROM line_referrals WHERE code = ?').get(code);
   if (existing?.visit_id && !visitId) return null; // the saved visit already filled it in
   const area = Object.fromEntries(AREA_KEYS.map((k) => [k, str(person.address?.[k])]));
-  d.prepare(`INSERT INTO line_referrals (code, created_by, visit_id, visit_uuid, first_name, last_name, phone_enc, line_enc, area, mental)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(code) DO UPDATE SET created_by = excluded.created_by, visit_id = COALESCE(excluded.visit_id, visit_id),
+  central.prepare(`INSERT INTO line_referrals (code, activity_id, test, created_by, volunteer, visit_id, visit_uuid, first_name, last_name,
+      phone_enc, line_enc, area, mental)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(code) DO UPDATE SET activity_id = excluded.activity_id, test = excluded.test, created_by = excluded.created_by,
+      volunteer = excluded.volunteer, visit_id = COALESCE(excluded.visit_id, visit_id),
       visit_uuid = COALESCE(excluded.visit_uuid, visit_uuid), first_name = excluded.first_name, last_name = excluded.last_name,
       phone_enc = excluded.phone_enc, line_enc = excluded.line_enc, area = excluded.area, mental = excluded.mental,
-      updated_at = datetime('now')`).run(code, userId, visitId, visitUuid, str(person.first_name), str(person.last_name),
-    encrypt(cleanPhone(person.phone)), encrypt(cleanLine(person.line)), JSON.stringify(area), mental);
+      updated_at = datetime('now')`).run(code, activityId, test ? 1 : 0, user.id, user.name || user.email, visitId, visitUuid,
+    str(person.first_name), str(person.last_name), encrypt(cleanPhone(person.phone)), encrypt(cleanLine(person.line)),
+    JSON.stringify(area), mental);
   return null;
 }
 
 /** Close the visit's mental-health ticket as referred once the villager is in the LINE chat. */
-export function markReferred(d, code) {
-  const r = d.prepare('SELECT visit_id, created_by, line_user_enc FROM line_referrals WHERE code = ?').get(code);
-  if (!r?.visit_id || !r.line_user_enc) return;
+export function markReferred(code) {
+  const r = getRef(code);
+  if (!r?.visit_id || !r.activity_id || !r.line_user_enc || !getActivity(r.activity_id)) return;
+  const d = r.test ? sandboxDb(r.activity_id) : activityDb(r.activity_id);
+  if (isReadOnly(d)) return; // archived: the ticket stays as it was handed over
   const t = d.prepare("SELECT id FROM tickets WHERE visit_id = ? AND category = 'mental' AND status NOT IN ('done','referred')").get(r.visit_id);
   if (!t) return;
   d.prepare("UPDATE tickets SET status = 'referred', updated_at = datetime('now') WHERE id = ?").run(t.id);
@@ -111,8 +121,8 @@ export function markReferred(d, code) {
 }
 
 /** Send the brief if the villager is linked and it has not gone out yet. `replyToken`: answer the webhook event. */
-export async function deliver(d, code, replyToken = null) {
-  const r = getRef(d, code);
+export async function deliver(code, replyToken = null) {
+  const r = getRef(code);
   if (!r || r.status === 'sent' || !r.line_user_enc) return;
   const test = isTest(code);
   const hasDetails = !!r.mental;
@@ -123,11 +133,10 @@ export async function deliver(d, code, replyToken = null) {
     } else if (hasDetails) {
       await callLine('/v2/bot/message/push', { to: decrypt(r.line_user_enc), messages: [text(brief(r, test))] });
     }
-    if (!d.isOpen) return;
-    if (hasDetails) d.prepare("UPDATE line_referrals SET status = 'sent', sent_at = datetime('now'), error = NULL WHERE code = ?").run(code);
+    if (hasDetails) central.prepare("UPDATE line_referrals SET status = 'sent', sent_at = datetime('now'), error = NULL WHERE code = ?").run(code);
   } catch (e) {
     console.warn(`line: ${code}: ${e.message}`);
-    if (d.isOpen) d.prepare("UPDATE line_referrals SET status = 'failed', error = ? WHERE code = ?").run(e.message.slice(0, 300), code);
+    central.prepare("UPDATE line_referrals SET status = 'failed', error = ? WHERE code = ?").run(e.message.slice(0, 300), code);
   }
 }
 
@@ -144,7 +153,7 @@ async function onEvent(ev) {
   if (ev.type !== 'message' || ev.message?.type !== 'text' || !ev.source?.userId) return;
   const code = parseCode(ev.message.text);
   if (!code) return; // ordinary chat with the professionals
-  const d = dbFor(code);
+  const d = central;
   const r = d.prepare('SELECT line_user_enc, status FROM line_referrals WHERE code = ?').get(code);
   if (r?.line_user_enc) {
     // Redelivered event, or the code sent twice: answer once only.
@@ -155,11 +164,11 @@ async function onEvent(ev) {
     .run(encrypt(ev.source.userId), code);
   else d.prepare("INSERT INTO line_referrals (code, line_user_enc, linked_at, status) VALUES (?, ?, datetime('now'), 'linked')")
     .run(code, encrypt(ev.source.userId));
-  markReferred(d, code);
-  await deliver(d, code, ev.replyToken);
+  markReferred(code);
+  await deliver(code, ev.replyToken);
 }
 
-export function mountLine(app, { need }) {
+export function mountLine(app, router, { need, mod }) {
   // Not under /api: no session and no test-mode header. LINE's "Verify" button sends an empty event list.
   app.post('/line/webhook', (req, res) => {
     if (!lineEnabled) return res.status(404).end();
@@ -169,7 +178,7 @@ export function mountLine(app, { need }) {
   });
 
   // Early registration from the visit form, as soon as the volunteer shows the QR code.
-  app.post('/api/line-referrals', need(), (req, res) => {
+  router.post('/line-referrals', need(), mod('visits'), (req, res) => {
     if (!lineEnabled) return res.status(404).json({ error: 'line off' });
     const b = req.body || {};
     const code = parseCode(b.code);
@@ -177,16 +186,16 @@ export function mountLine(app, { need }) {
     if (b.consent !== true) return res.status(400).json({ error: 'consent' });
     const scored = scoreMental(cleanMental(b.mental));
     if (!scored.complete || scored.level !== 'yellow') return res.status(400).json({ error: 'not yellow' });
-    const d = req.dbx;
-    const err = upsertReferral(d, { code, userId: req.user.id, visitUuid: str(b.visit_uuid), person: b, mental: mentalOf(scored) });
+    const err = upsertReferral({ code, activityId: req.activity.id, test: req.test, user: req.user, visitUuid: str(b.visit_uuid),
+      person: b, mental: mentalOf(scored) });
     if (err) return res.status(409).json({ error: err });
-    res.json({ ok: true, status: d.prepare('SELECT status FROM line_referrals WHERE code = ?').get(code).status });
-    deliver(d, code);
+    res.json({ ok: true, status: getRef(code).status });
+    deliver(code);
   });
 }
 
 /** Referral status for the visit page. */
-export function referralOfVisit(d, visitId) {
-  const r = d.prepare('SELECT code, status, error, linked_at, sent_at FROM line_referrals WHERE visit_id = ?').get(visitId);
-  return r || null;
+export function referralOfVisit(activityId, test, visitId) {
+  return central.prepare(`SELECT code, status, error, linked_at, sent_at FROM line_referrals
+    WHERE activity_id = ? AND test = ? AND visit_id = ?`).get(activityId, test ? 1 : 0, visitId) || null;
 }

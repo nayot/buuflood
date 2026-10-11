@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, addressLine, navLink, placeLink, canLocate, timeAgo } from '../lib/api.js';
+import { api, addressLine, navLink, placeLink, canLocate, timeAgo, aurl } from '../lib/api.js';
 import { NEEDS, CATEGORIES, TICKET_STATUS } from '../../../shared/triage.js';
 import { Q2, Q9, Q9_SCALE, Q8, Q8_CONTROL, MENTAL_ADVICE } from '../../../shared/mental.js';
 import { REFERRAL_STATUS } from '../../../shared/line.js';
@@ -126,8 +126,8 @@ export default function VisitDetail({ id }) {
               {n.photos.length > 0 && (
                 <div className="grid grid-cols-4 gap-2">
                   {n.photos.map((p) => (
-                    <a key={p} href={`api/photos/${p}`} target="_blank" rel="noreferrer">
-                      <img src={`api/photos/${p}`} alt="" loading="lazy" className="aspect-square w-full object-cover rounded-lg" />
+                    <a key={p} href={aurl(`api/photos/${p}`)} target="_blank" rel="noreferrer">
+                      <img src={aurl(`api/photos/${p}`)} alt="" loading="lazy" className="aspect-square w-full object-cover rounded-lg" />
                     </a>
                   ))}
                 </div>
@@ -141,7 +141,7 @@ export default function VisitDetail({ id }) {
         <Section title={`🔧 ลงทะเบียนศูนย์ซ่อม (${v.repairs.length})`} hint="บันทึกจากรุ่นก่อน 2.3 ที่ออกเลขคิวจากการเยี่ยมบ้าน">
           {v.repairs.map((r) => (
             <a key={r.id} href={`#/repair/${r.id}`} className="flex items-center gap-3 rounded-xl border border-neutral-200 p-2">
-              {r.photos[0] && <img src={`api/repair-photos/${r.photos[0]}`} alt="" className="w-14 h-14 object-cover rounded-lg" />}
+              {r.photos[0] && <img src={aurl(`api/repair-photos/${r.photos[0]}`)} alt="" className="w-14 h-14 object-cover rounded-lg" />}
               <div className="flex-1 min-w-0">
                 <div className="font-bold text-lg">{r.queue}</div>
                 <div className="text-sm truncate">{r.type_label}{r.type_other ? ` (${r.type_other})` : ''}{r.brand ? ` · ${r.brand}` : ''}</div>
@@ -167,8 +167,8 @@ export default function VisitDetail({ id }) {
         <Section title={`รูปถ่าย (${v.photos.length})`}>
           <div className="grid grid-cols-3 gap-2">
             {v.photos.map((p) => (
-              <a key={p} href={`api/photos/${p}`} target="_blank" rel="noreferrer">
-                <img src={`api/photos/${p}`} alt="" loading="lazy" className="aspect-square w-full object-cover rounded-lg" />
+              <a key={p} href={aurl(`api/photos/${p}`)} target="_blank" rel="noreferrer">
+                <img src={aurl(`api/photos/${p}`)} alt="" loading="lazy" className="aspect-square w-full object-cover rounded-lg" />
               </a>
             ))}
           </div>
