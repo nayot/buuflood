@@ -5,11 +5,11 @@ import { CATEGORIES, TICKET_STATUS } from '../../../shared/triage.js';
 import { displayName } from '../../../shared/contact.js';
 import { LevelBadge, Empty } from '../components/ui.jsx';
 
-export default function MyVisits({ me }) {
+export default function MyVisits({ me, archived }) {
   const [rows, setRows] = useState(null);
   const [queued, setQueued] = useState([]);
-  const [all, setAll] = useState(false);
-  const canAll = ['admin', 'office'].includes(me.role);
+  const canAll = ['admin', 'manager', 'office'].includes(me.role);
+  const [all, setAll] = useState(canAll && !!archived); // an archive is looked at as a whole
 
   const load = () => api(`api/visits${all ? '' : '?mine=1'}`).then(setRows).catch(() => setRows([]));
   useEffect(() => { load(); }, [all]);
@@ -30,7 +30,7 @@ export default function MyVisits({ me }) {
           {queued.map((q) => (
             <div key={q.uuid} className="text-sm flex justify-between gap-2">
               <span>{displayName(q.data) || 'ไม่ระบุชื่อ'}</span>
-              <span className={q.failed ? 'text-lvred' : 'text-neutral-500'}>{q.failed ? `ส่งไม่ได้: ${q.failed}` : 'รอสัญญาณ'}</span>
+              <span className={q.failed ? 'text-lvred' : 'text-neutral-500'}>{q.failed ? `ส่งไม่ได้: ${q.failed}` : q.blocked ? `ส่งไม่ได้: ${q.blocked} (แจ้งผู้จัดการกิจกรรม)` : 'รอสัญญาณ'}</span>
             </div>
           ))}
           <button onClick={() => flush()} className="btn-primary w-full">ส่งตอนนี้</button>

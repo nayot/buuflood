@@ -1,59 +1,48 @@
 import { useEffect, useState } from 'react';
 import { api, timeAgo } from '../lib/api.js';
-import { SPECIALTIES, parseSpecialties } from '../../../shared/triage.js';
-import { Empty, Check } from '../components/ui.jsx';
+import { ROLE_LABEL } from '../../../shared/activities.js';
+import { Empty } from '../components/ui.jsx';
 
-const ROLES = { pending: 'รออนุมัติ (ยังใช้งานไม่ได้)', volunteer: 'อาสาสมัคร', responder: 'ผู้เชี่ยวชาญ', fixer: 'ช่างซ่อม (ศูนย์ซ่อม)', office: 'เจ้าหน้าที่ (อบต./ศูนย์ช่วยเหลือ)', admin: 'ผู้ดูแลระบบ' };
+const ACCOUNT_ROLES = { user: 'ผู้ใช้', admin: 'ผู้ดูแลระบบ (เห็นทุกกิจกรรม)', pending: 'รออนุมัติ (ยังใช้งานไม่ได้)' };
 
+// Every Google account that has signed in (admins). Roles inside an activity are set on its members page.
 export default function Users({ me, notify, refreshMe }) {
   const [rows, setRows] = useState(null);
   const [q, setQ] = useState('');
   const load = () => api('api/users').then(setRows).catch(() => setRows([]));
   useEffect(() => { load(); }, []);
 
-  const save = async (u, patch) => {
-    const next = { role: u.role, specialty: u.specialty, ...patch };
-    try { await api(`api/users/${u.id}`, { method: 'PATCH', body: next }); notify('บันทึกแล้ว'); load(); if (u.role === 'pending' || next.role === 'pending') refreshMe?.(); }
+  const setRole = async (u, role) => {
+    try { await api(`api/users/${u.id}`, { method: 'PATCH', body: { role } }); notify('บันทึกแล้ว'); load(); refreshMe(); }
     catch { notify('บันทึกไม่สำเร็จ'); }
+  };
+  const remove = async (u) => {
+    if (!confirm(`ลบบัญชี ${u.name} (${u.email})?\nจะออกจากทุกกิจกรรม ถ้าเข้าสู่ระบบอีกจะเป็นบัญชีใหม่ที่ยังไม่ได้อยู่ในกิจกรรมใด`)) return;
+    try { await api(`api/users/${u.id}`, { method: 'DELETE' }); load(); refreshMe(); } catch { notify('ไม่สำเร็จ'); }
   };
 
   const shown = (rows || []).filter((u) => !q || `${u.name} ${u.email} ${u.phone || ''}`.toLowerCase().includes(q.toLowerCase()));
-
   return (
     <div className="space-y-3">
-      <h1 className="text-xl font-bold px-1">ผู้ใช้และสิทธิ์</h1>
-      <p className="text-sm text-neutral-500 px-1">ผู้ใช้ใหม่เป็นอาสาสมัครโดยอัตโนมัติเมื่อเข้าสู่ระบบครั้งแรก ยกเว้นบัญชีภายนอก (เช่น @gmail.com) ซึ่งต้อง “รออนุมัติ”: ตรวจว่าเป็นใคร (โทรตามเบอร์ที่ให้ไว้) แล้วเลือกบทบาทเพื่ออนุมัติ กำหนดผู้เชี่ยวชาญพร้อมด้านที่รับผิดชอบได้ที่นี่</p>
+      <h1 className="text-xl font-bold px-1">บัญชีผู้ใช้</h1>
+      <p className="text-sm text-neutral-500 px-1">ทุกบัญชีที่เคยเข้าสู่ระบบ บทบาทในแต่ละกิจกรรม (อาสาสมัคร ผู้เชี่ยวชาญ ผู้จัดการ ฯลฯ) กำหนดที่หน้าสมาชิกของกิจกรรมนั้น บัญชีภายนอก (เช่น @gmail.com) ที่ “รออนุมัติ” อนุมัติได้ที่นี่ หรือโดยผู้จัดการของกิจกรรมที่บัญชีนั้นขอเข้าร่วม</p>
       <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาชื่อ อีเมล หรือเบอร์โทร" />
       {rows === null ? <Empty>กำลังโหลด…</Empty> : shown.map((u) => (
         <div key={u.id} className={`card space-y-2 ${u.role === 'pending' ? 'border-2 border-lvred' : ''}`}>
-          <div>
-            <div className="font-semibold">{u.name}</div>
-            <div className="text-xs text-neutral-500">{u.email} · เข้าใช้ {timeAgo(u.last_login)}</div>
-            <div className="text-xs">{u.phone ? <a className="text-golddark underline" href={`tel:${u.phone}`}>📞 {u.phone}</a> : <span className="text-neutral-400">ยังไม่มีเบอร์โทร</span>}</div>
-          </div>
-          <div>
-            <select value={u.role} disabled={u.id === me.id} onChange={(e) => save(u, { role: e.target.value })}>
-              {Object.entries(ROLES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-            </select>
-          </div>
-          {u.role === 'responder' && (
-            <div className="space-y-1">
-              <span className="label">ด้านที่รับผิดชอบ (เลือกได้หลายด้าน)</span>
-              <div className="grid grid-cols-2 gap-2">
-                {Object.entries(SPECIALTIES).map(([k, l]) => {
-                  const mine = parseSpecialties(u.specialty);
-                  const on = mine.includes(k);
-                  return (
-                    <Check key={k} checked={on}
-                      onChange={(c) => save(u, { specialty: (c ? [...mine, k] : mine.filter((x) => x !== k)).join(',') })}>
-                      {l}
-                    </Check>
-                  );
-                })}
+          <div className="flex items-start gap-2">
+            <div className="flex-1">
+              <div className="font-semibold">{u.name}</div>
+              <div className="text-xs text-neutral-500">{u.email} · เข้าใช้ {timeAgo(u.last_login)}</div>
+              <div className="text-xs">{u.phone ? <a className="text-golddark underline" href={`tel:${u.phone}`}>📞 {u.phone}</a> : <span className="text-neutral-400">ยังไม่มีเบอร์โทร</span>}</div>
+              <div className="text-xs text-neutral-600 mt-1">
+                {u.activities.length ? u.activities.map((a) => `${a.status === 'archived' ? '📦 ' : ''}${a.name} (${ROLE_LABEL[a.role] || a.role})`).join(' · ') : 'ยังไม่ได้อยู่ในกิจกรรมใด'}
               </div>
-              {parseSpecialties(u.specialty).length === 0 && <p className="text-xs text-lvred">ยังไม่ได้เลือกด้าน: จะยังไม่เห็นงานใด ๆ</p>}
             </div>
-          )}
+            {u.id !== me.id && <button className="text-xs text-lvred underline" onClick={() => remove(u)}>ลบบัญชี</button>}
+          </div>
+          <select value={u.role} disabled={u.id === me.id} onChange={(e) => setRole(u, e.target.value)}>
+            {Object.entries(ACCOUNT_ROLES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
         </div>
       ))}
     </div>

@@ -9,11 +9,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { db, prodDb, json, withDb, uploadDir, sandboxDb, sandboxOpen, syncSandboxUsers, resetSandbox } from './db.js';
+import { db, central, json, withDb, uploadDir, activityDb, sandboxDb, getActivity, ensureUser, resetSandbox, liveActivityIds, isOpenDb } from './db.js';
 import { encrypt, decrypt } from './crypto.js';
 import { geocodePending } from './geocode.js';
-import { mountRepairs, itemsError, itemsOfVisit, removeFiles } from './repairs.js';
-import { mountLine, lineEnabled, LINE_OA, upsertReferral, mentalOf, markReferred, deliver, referralOfVisit } from './line.js';
+import { mountRepairs, itemsError, itemsOfVisit, removeFiles, repairStaff } from './repairs.js';
+import { mountLine, lineEnabled, LINE_OA, upsertReferral, referralConflict, mentalOf, markReferred, deliver, referralOfVisit } from './line.js';
+import { mountActivities, mountActivityAdmin } from './activities.js';
 import { parseCode } from '../shared/line.js';
 import { triage, ticketsFor, needsMentalScreening, CATEGORIES, LEVELS, TICKET_STATUS, NEEDS, parseSpecialties } from '../shared/triage.js';
 import { cleanMental } from '../shared/mental.js';
@@ -55,32 +56,14 @@ app.use(cookieSession({
   maxAge: 14 * 86400 * 1000,
 }));
 
-// ---------------------------------------------------------------- database of this request (production or test mode)
+// ---------------------------------------------------------------- account of this request
 
-// Admin test mode: everything the admin does goes to the sandbox database (DATA_DIR/sandbox), never to production.
-// The flag lives in the signed session cookie, so photo and CSV links follow it too, and it expires on its own.
-const TEST_HOURS = 8;
+// The signed-in Google account (central database). Activity routes add the activity, the member's role in it and the
+// database to use (see `activityContext` below).
 app.use((req, res, next) => {
   const uid = req.session?.uid;
-  req.prodUser = uid ? prodDb.prepare('SELECT * FROM users WHERE id = ?').get(uid) : null;
-  req.test = req.prodUser?.role === 'admin' && req.session.testUntil > Date.now();
-  if (req.session?.testUntil && !req.test) req.session.testUntil = null;
-  req.dbx = req.test ? sandboxDb() : prodDb;
-  withDb(req.dbx, () => {
-    req.uploadDir = uploadDir();
-    req.user = req.prodUser;
-    if (req.test) {
-      const get = () => db.prepare('SELECT * FROM users WHERE id = ?').get(uid);
-      req.user = get() || (syncSandboxUsers(), get());
-    }
-    // The client says which mode it thinks it is in; a change it has not seen yet (e.g. test mode expired)
-    // must not send its next action to the other database.
-    const expect = req.get('X-Test-Mode');
-    if (req.method !== 'GET' && req.path.startsWith('/api/') && expect != null && (expect === '1') !== req.test) {
-      return res.status(409).json({ error: 'mode', test: req.test });
-    }
-    next();
-  });
+  req.account = uid ? central.prepare('SELECT * FROM users WHERE id = ?').get(uid) : null;
+  next();
 });
 
 // ---------------------------------------------------------------- app on/off (admin switch)
@@ -88,11 +71,11 @@ app.use((req, res, next) => {
 // While the app is closed, every API call except /api/me answers 503 for non-admins. 503, not 4xx: the phone's outbox
 // keeps queued visits and sends them once the app is open again. The LINE webhook (outside /api) keeps working.
 const appClosed = () => {
-  const v = prodDb.prepare("SELECT value FROM settings WHERE key = 'app_closed'").get()?.value;
+  const v = central.prepare("SELECT value FROM settings WHERE key = 'app_closed'").get()?.value;
   return v ? JSON.parse(v) : null;
 };
 app.use('/api', (req, res, next) => {
-  if (req.path === '/me' || req.path.startsWith('/announcements/') || req.prodUser?.role === 'admin') return next();
+  if (req.path === '/me' || req.path.startsWith('/announcements/') || req.account?.role === 'admin') return next();
   const closed = appClosed();
   if (closed) return res.status(503).json({ error: 'closed', message: closed.message || null });
   next();
@@ -105,17 +88,19 @@ const needsApproval = (email) => APPROVAL_DOMAINS.includes(domainOf(email))
   || (APPROVAL_DOMAINS.includes('*') && !DOMAINS.includes(domainOf(email)));
 const allowedEmail = (email) => DOMAINS.includes(domainOf(email)) || needsApproval(email);
 
+// Accounts are `user`, `admin` or `pending` (waiting for approval). What a user may do comes from their role in each
+// activity (memberships).
 function upsertUser({ email, name, picture }) {
   email = email.toLowerCase();
-  const existing = prodDb.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  const existing = central.prepare('SELECT * FROM users WHERE email = ?').get(email);
   if (existing) {
     const role = ADMINS.includes(email) ? 'admin' : existing.role;
-    prodDb.prepare("UPDATE users SET name = ?, picture = ?, role = ?, last_login = datetime('now') WHERE id = ?")
+    central.prepare("UPDATE users SET name = ?, picture = ?, role = ?, last_login = datetime('now') WHERE id = ?")
       .run(name || existing.name, picture || existing.picture, role, existing.id);
     return existing.id;
   }
-  const role = ADMINS.includes(email) ? 'admin' : needsApproval(email) ? 'pending' : 'volunteer';
-  return Number(prodDb.prepare("INSERT INTO users (email, name, picture, role, last_login) VALUES (?, ?, ?, ?, datetime('now'))")
+  const role = ADMINS.includes(email) ? 'admin' : needsApproval(email) ? 'pending' : 'user';
+  return Number(central.prepare("INSERT INTO users (email, name, picture, role, last_login) VALUES (?, ?, ?, ?, datetime('now'))")
     .run(email, name || email, picture || null, role).lastInsertRowid);
 }
 
@@ -143,12 +128,17 @@ app.get('/auth/callback', async (req, res) => {
 });
 
 if (DEV_AUTH) {
-  // Local testing only: /auth/dev?email=someone@eng.buu.ac.th&role=responder&specialty=electrical,structural
+  // Local testing only: /auth/dev?email=someone@eng.buu.ac.th[&admin=1][&activity=2&role=responder&specialty=electrical]
   app.get('/auth/dev', (req, res) => {
     const email = String(req.query.email || 'dev@eng.buu.ac.th');
     if (!allowedEmail(email)) return res.status(403).send('domain not allowed');
     const uid = upsertUser({ email, name: email.split('@')[0] });
-    if (req.query.role) prodDb.prepare('UPDATE users SET role = ?, specialty = ? WHERE id = ?').run(String(req.query.role), parseSpecialties(req.query.specialty).join(',') || null, uid);
+    if (req.query.admin === '1') central.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(uid);
+    if (req.query.activity && req.query.role) {
+      central.prepare(`INSERT INTO memberships (activity_id, user_id, role, specialty) VALUES (?, ?, ?, ?)
+        ON CONFLICT DO UPDATE SET role = excluded.role, specialty = excluded.specialty`)
+        .run(Number(req.query.activity), uid, String(req.query.role), parseSpecialties(req.query.specialty).join(',') || null);
+    }
     req.session = { uid };
     res.redirect(`${PUBLIC_URL}/#/`);
   });
@@ -157,70 +147,78 @@ if (DEV_AUTH) {
 
 app.post('/auth/logout', (req, res) => { req.session = null; res.json({ ok: true }); });
 
+// Roles inside an activity. Admins act as `admin` in every activity; managers lead their own.
+const LEAD = ['admin', 'manager'];
+const isLead = (user) => LEAD.includes(user.role);
+
 const need = (...roles) => (req, res, next) => {
   if (!req.user) return res.status(401).json({ error: 'login' });
-  if (req.prodUser.role === 'pending') return res.status(403).json({ error: 'pending' });
+  if (req.account.role === 'pending') return res.status(403).json({ error: 'pending' });
   if (roles.length && !roles.includes(req.user.role)) return res.status(403).json({ error: 'forbidden' });
   next();
 };
+/** The activity must have this module switched on. */
+const mod = (name) => (req, res, next) => (req.modules.includes(name) ? next() : res.status(403).json({ error: 'module' }));
 
 app.get('/api/me', (req, res) => {
-  if (!req.user) return res.json({ user: null, devAuth: DEV_AUTH, domains: DOMAINS, approval: APPROVAL_DOMAINS });
-  const { id, email, name, picture, role, specialty } = req.user;
-  res.json({ user: { id, email, name, picture, role, specialty, specialties: parseSpecialties(specialty), realRole: req.prodUser.role,
-    phone: decrypt(req.prodUser.phone_enc),
-    pending_users: req.prodUser.role === 'admin' ? prodDb.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'pending'").get().n : 0,
-    line_oa: lineEnabled ? LINE_OA : null },
-    test: req.test ? { until: req.session.testUntil } : null, emergency: EMERGENCY, closed: appClosed() });
+  if (!req.account) return res.json({ user: null, devAuth: DEV_AUTH, domains: DOMAINS, approval: APPROVAL_DOMAINS });
+  const { id, email, name, picture, role } = req.account;
+  const admin = role === 'admin';
+  // Members see their activities; admins see every live one (archived ones are on the activities page).
+  const activities = central.prepare(`SELECT a.id, a.name, a.area, a.starts_on, a.ends_on, a.modules, a.status, m.role
+    FROM activities a LEFT JOIN memberships m ON m.activity_id = a.id AND m.user_id = ?
+    WHERE ${admin ? "(a.status = 'live' OR m.user_id IS NOT NULL)" : "m.user_id IS NOT NULL AND (a.status = 'live' OR m.role = 'manager')"}
+    ORDER BY a.status = 'archived', a.starts_on DESC, a.id DESC`).all(id).map((a) => ({ ...a, modules: json(a.modules, []) }));
+  res.json({ user: { id, email, name, picture, realRole: role, phone: decrypt(req.account.phone_enc),
+    pending_users: admin ? central.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'pending'").get().n : 0 },
+    activities, emergency: EMERGENCY, closed: appClosed() });
 });
 
-// The volunteer's own phone. Kept on the production account in either mode (it is not test data).
+// The volunteer's own phone (account data, not activity data).
 // Pending accounts may add theirs too, so the admin can check who is asking.
 app.post('/api/me/phone', (req, res) => {
-  if (!req.user) return res.status(401).json({ error: 'login' });
+  if (!req.account) return res.status(401).json({ error: 'login' });
   const phone = cleanPhone(req.body?.phone);
   if (phone.replace(/\D/g, '').length < 9) return res.status(400).json({ error: 'เบอร์โทรศัพท์ไม่ครบ' });
-  prodDb.prepare('UPDATE users SET phone_enc = ? WHERE id = ?').run(encrypt(phone), req.prodUser.id);
+  central.prepare('UPDATE users SET phone_enc = ? WHERE id = ?').run(encrypt(phone), req.account.id);
   res.json({ ok: true, phone });
 });
 
-// ---------------------------------------------------------------- admin test mode
+// ---------------------------------------------------------------- app on/off, announcements (whole app)
 
-const realAdmin = (req, res, next) => (req.prodUser?.role === 'admin' ? next() : res.status(403).json({ error: 'forbidden' }));
+const realAdmin = (req, res, next) => (req.account?.role === 'admin' ? next() : res.status(403).json({ error: 'forbidden' }));
 
 app.post('/api/app-closed', realAdmin, (req, res) => {
   if (req.body?.closed) {
     const value = JSON.stringify({ message: String(req.body.message || '').trim().slice(0, 300) || null,
-      since: new Date().toISOString(), by: req.prodUser.name || req.prodUser.email });
-    prodDb.prepare("INSERT INTO settings (key, value) VALUES ('app_closed', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(value);
-  } else prodDb.prepare("DELETE FROM settings WHERE key = 'app_closed'").run();
+      since: new Date().toISOString(), by: req.account.name || req.account.email });
+    central.prepare("INSERT INTO settings (key, value) VALUES ('app_closed', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(value);
+  } else central.prepare("DELETE FROM settings WHERE key = 'app_closed'").run();
   res.json({ ok: true, closed: appClosed() });
 });
 
-// ---------------------------------------------------------------- announcements
-
-// Production data in either mode. Every signed-in account gets them, including pending ones and while the app is
-// closed (the /api gate lets /api/announcements/* through); the phone polls `pending` and acknowledges each one.
-const announcementsFor = (uid) => prodDb.prepare(`SELECT a.id, a.message, a.created_at, u.name AS by FROM announcements a
+// Every signed-in account gets them, including pending ones and while the app is closed (the /api gate lets
+// /api/announcements/* through); the phone polls `pending` and acknowledges each one.
+const announcementsFor = (uid) => central.prepare(`SELECT a.id, a.message, a.created_at, u.name AS by FROM announcements a
   LEFT JOIN users u ON u.id = a.created_by
   WHERE a.ended_at IS NULL AND NOT EXISTS (SELECT 1 FROM announcement_acks k WHERE k.announcement_id = a.id AND k.user_id = ?)
   ORDER BY a.id`).all(uid);
 
 app.get('/api/announcements/pending', (req, res) => {
-  if (!req.prodUser) return res.status(401).json({ error: 'login' });
-  res.json(announcementsFor(req.prodUser.id));
+  if (!req.account) return res.status(401).json({ error: 'login' });
+  res.json(announcementsFor(req.account.id));
 });
 
 app.post('/api/announcements/:id/ack', (req, res) => {
-  if (!req.prodUser) return res.status(401).json({ error: 'login' });
-  prodDb.prepare('INSERT OR IGNORE INTO announcement_acks (announcement_id, user_id) SELECT id, ? FROM announcements WHERE id = ?')
-    .run(req.prodUser.id, Number(req.params.id));
+  if (!req.account) return res.status(401).json({ error: 'login' });
+  central.prepare('INSERT OR IGNORE INTO announcement_acks (announcement_id, user_id) SELECT id, ? FROM announcements WHERE id = ?')
+    .run(req.account.id, Number(req.params.id));
   res.json({ ok: true });
 });
 
 app.get('/api/announcements', realAdmin, (req, res) => {
-  const users = prodDb.prepare("SELECT COUNT(*) AS n FROM users WHERE role != 'pending'").get().n;
-  res.json({ users, list: prodDb.prepare(`SELECT a.*, u.name AS by,
+  const users = central.prepare("SELECT COUNT(*) AS n FROM users WHERE role != 'pending'").get().n;
+  res.json({ users, list: central.prepare(`SELECT a.*, u.name AS by,
       (SELECT COUNT(*) FROM announcement_acks k JOIN users x ON x.id = k.user_id
         WHERE k.announcement_id = a.id AND x.role != 'pending') AS acks
     FROM announcements a LEFT JOIN users u ON u.id = a.created_by ORDER BY a.id DESC LIMIT 50`).all() });
@@ -229,37 +227,95 @@ app.get('/api/announcements', realAdmin, (req, res) => {
 app.post('/api/announcements', realAdmin, (req, res) => {
   const message = String(req.body?.message || '').trim().slice(0, 1000);
   if (!message) return res.status(400).json({ error: 'message' });
-  const id = Number(prodDb.prepare('INSERT INTO announcements (message, created_by) VALUES (?, ?)').run(message, req.prodUser.id).lastInsertRowid);
-  prodDb.prepare('INSERT INTO announcement_acks (announcement_id, user_id) VALUES (?, ?)').run(id, req.prodUser.id); // the sender has read it
+  const id = Number(central.prepare('INSERT INTO announcements (message, created_by) VALUES (?, ?)').run(message, req.account.id).lastInsertRowid);
+  central.prepare('INSERT INTO announcement_acks (announcement_id, user_id) VALUES (?, ?)').run(id, req.account.id); // the sender has read it
   res.json({ ok: true, id });
 });
 
 app.post('/api/announcements/:id/end', realAdmin, (req, res) => {
-  prodDb.prepare("UPDATE announcements SET ended_at = datetime('now') WHERE id = ? AND ended_at IS NULL").run(Number(req.params.id));
+  central.prepare("UPDATE announcements SET ended_at = datetime('now') WHERE id = ? AND ended_at IS NULL").run(Number(req.params.id));
   res.json({ ok: true });
 });
 
-app.post('/api/test-mode', realAdmin, (req, res) => {
-  if (req.body?.on) {
-    req.session.testUntil = Date.now() + TEST_HOURS * 3600 * 1000;
-    syncSandboxUsers();
-  } else req.session.testUntil = null;
+// Activities, accounts and join links (central): server/activities.js
+mountActivities(app, { realAdmin });
+
+// ---------------------------------------------------------------- activity context
+
+// Everything about one activity is under /api/a/<id>/…: the id is in the URL, so photo and CSV links carry it too.
+// Admins enter any activity as `admin`; members with their role there. Admin test mode (8 h, also for managers of the
+// activity) sends everything to the activity's sandbox; the session holds { aid, until, role, specialty }.
+const TEST_HOURS = 8;
+const ar = express.Router({ mergeParams: true });
+
+function activityContext(req, res, next) {
+  if (!req.account) return res.status(401).json({ error: 'login' });
+  if (req.account.role === 'pending') return res.status(403).json({ error: 'pending' });
+  const activity = getActivity(req.params.aid);
+  if (!activity) return res.status(404).json({ error: 'activity' });
+  const admin = req.account.role === 'admin';
+  const m = central.prepare('SELECT role, specialty FROM memberships WHERE activity_id = ? AND user_id = ?').get(activity.id, req.account.id);
+  if (!admin && (!m || m.role === 'pending')) return res.status(403).json({ error: m ? 'pending' : 'member' });
+  const archived = activity.status === 'archived';
+  // Archived activities are for admins and the activity's managers only.
+  if (archived && !admin && m.role !== 'manager') return res.status(403).json({ error: 'archived' });
+  const t = req.session.test;
+  req.canTest = !archived && (admin || m?.role === 'manager');
+  req.test = req.canTest && t?.aid === activity.id && t.until > Date.now();
+  if (t && !req.test && (t.until <= Date.now() || t.aid === activity.id)) req.session.test = null;
+  req.activity = activity;
+  req.modules = json(activity.modules, []);
+  req.archived = archived;
+  req.dbx = req.test ? sandboxDb(activity.id) : activityDb(activity.id);
+  const role = req.test ? t.role || 'admin' : admin ? 'admin' : m.role;
+  const specialty = req.test ? t.specialty || null : admin ? null : m.specialty;
+  withDb(req.dbx, () => {
+    req.uploadDir = uploadDir();
+    ensureUser(req.dbx, req.account, role);
+    req.user = { ...req.account, role, specialty, repairStaff: repairStaff(role, req.modules) };
+    if (req.method !== 'GET') {
+      // The client says which mode it thinks it is in; a change it has not seen yet (e.g. test mode expired) must not
+      // send its next action to the other database. Archived: 409 too, so phones keep anything still queued.
+      const expect = req.get('X-Test-Mode');
+      if (expect != null && (expect === '1') !== req.test) return res.status(409).json({ error: 'mode', test: req.test });
+      if (archived && !req.path.startsWith('/admin/')) return res.status(409).json({ error: 'archived' });
+    }
+    next();
+  });
+}
+app.use('/api/a/:aid', activityContext, ar);
+
+ar.get('/me', (req, res) => {
+  const a = req.activity;
+  res.json({ activity: { id: a.id, name: a.name, area: a.area, starts_on: a.starts_on, ends_on: a.ends_on, status: a.status,
+    modules: req.modules, deidentified_at: a.deidentified_at },
+    role: req.user.role, specialty: req.user.specialty, specialties: parseSpecialties(req.user.specialty),
+    repair_staff: req.user.repairStaff, can_test: req.canTest,
+    test: req.test ? { until: req.session.test.until } : null,
+    pending_members: isLead(req.user) ? central.prepare("SELECT COUNT(*) AS n FROM memberships WHERE activity_id = ? AND role = 'pending'").get(a.id).n : 0,
+    line_oa: lineEnabled && req.modules.includes('visits') ? LINE_OA : null });
+});
+
+// ---------------------------------------------------------------- admin test mode (per activity)
+
+const tester = (req, res, next) => (req.canTest ? next() : res.status(403).json({ error: 'forbidden' }));
+
+ar.post('/test-mode', tester, (req, res) => {
+  req.session.test = req.body?.on ? { aid: req.activity.id, until: Date.now() + TEST_HOURS * 3600 * 1000, role: null, specialty: null } : null;
   res.json({ ok: true });
 });
 
-// Test as another role: changes only the admin's own account inside the sandbox. Leaving test mode always works,
-// because it is checked against the production role.
-app.post('/api/test-mode/role', realAdmin, (req, res) => {
+// Test as another role: only inside the sandbox. Leaving test mode always works.
+ar.post('/test-mode/role', tester, (req, res) => {
   if (!req.test) return res.status(409).json({ error: 'mode', test: false });
   const { role, specialty } = req.body || {};
-  if (!['volunteer', 'responder', 'fixer', 'office', 'admin'].includes(role)) return res.status(400).json({ error: 'role' });
-  const list = role === 'responder' ? parseSpecialties(specialty).join(',') || null : null;
-  db.prepare('UPDATE users SET role = ?, specialty = ? WHERE id = ?').run(role, list, req.prodUser.id);
+  if (!['volunteer', 'responder', 'fixer', 'office', 'manager', 'admin'].includes(role)) return res.status(400).json({ error: 'role' });
+  req.session.test = { ...req.session.test, role, specialty: role === 'responder' ? parseSpecialties(specialty).join(',') || null : null };
   res.json({ ok: true });
 });
 
-app.post('/api/test-mode/reset', realAdmin, (req, res) => {
-  resetSandbox();
+ar.post('/test-mode/reset', tester, (req, res) => {
+  resetSandbox(req.activity.id);
   res.json({ ok: true });
 });
 
@@ -287,14 +343,14 @@ const needsOf = (items) => items.map((it) => ({ uuid: String(it.uuid), type: it.
 // Who may see a visit, and how much of it.
 function access(user, visit) {
   if (!user || !visit) return null;
-  if (user.role === 'admin' || user.role === 'office' || visit.created_by === user.id) return 'full';
+  if (isLead(user) || user.role === 'office' || visit.created_by === user.id) return 'full';
   if (user.role === 'responder') return 'responder';
   return null;
 }
 
 // The 2Q/9Q/8Q answers are health data: only admins, the volunteer who asked them and mental-health responders
 // see them. Everyone else who can open the visit sees the level and the 9Q/8Q totals.
-const seesMentalDetail = (user, visit) => user.role === 'admin' || visit.created_by === user.id
+const seesMentalDetail = (user, visit) => isLead(user) || visit.created_by === user.id
   || (user.role === 'responder' && parseSpecialties(user.specialty).includes('mental'));
 
 function serializeVisit(v, user) {
@@ -317,7 +373,7 @@ function serializeVisit(v, user) {
   };
 }
 
-app.post('/api/visits', need(), upload, (req, res) => {
+ar.post('/visits', need(), mod('visits'), upload, (req, res) => {
   const files = req.files || [];
   let d;
   try { d = JSON.parse(req.body.data || '{}'); } catch { removeFiles(files); return res.status(400).json({ error: 'bad data' }); }
@@ -361,6 +417,7 @@ app.post('/api/visits', need(), upload, (req, res) => {
     const code = parseCode(d.line_referral.code);
     if (!code || code !== d.line_referral.code || code.startsWith('BT-') !== req.test) return fail('line code');
     if (d.line_referral.consent !== true) return fail('line consent');
+    if (referralConflict(code, { activityId: req.activity.id, userId: req.user.id })) return fail('code taken');
     referral = code;
   }
 
@@ -391,21 +448,23 @@ app.post('/api/visits', need(), upload, (req, res) => {
       for (const f of files.filter((x) => x.fieldname === `item_${it.uuid}`)) insI.run(visitId, f.filename, String(it.uuid));
     }
     if (referral) {
-      const err = upsertReferral(db, { code: referral, userId: req.user.id, visitId, visitUuid: String(d.uuid),
-        person: { ...d, address }, mental: mentalOf(result.mental) });
-      if (err) throw Object.assign(new Error(err), { status: 400 });
       const t = db.prepare("SELECT id FROM tickets WHERE visit_id = ? AND category = 'mental'").get(visitId);
       if (t) db.prepare('INSERT INTO ticket_updates (ticket_id, user_id, status, note) VALUES (?, ?, ?, ?)').run(t.id, req.user.id, 'open',
         `ส่งต่อ BUU Flood Help (LINE) รหัส ${referral}: รอผู้ประสบภัยส่งรหัสทาง LINE เมื่อเข้าแชทแล้วงานนี้จะปิดเป็น "ส่งต่อ"`);
-      markReferred(db, referral); // the villager may have sent the code already
     }
 
     // Safety check-in uses where the volunteer is, which differs from the house when met elsewhere.
     const here = d.here || (locationSource === 'gps' ? d : null);
     if (here && num(here.lat) != null && num(here.lng) != null) checkin(req.user.id, here.lat, here.lng, here.accuracy);
     db.exec('COMMIT');
+    if (referral) {
+      // Central database (the webhook finds it there); checked for conflicts before the transaction.
+      upsertReferral({ code: referral, activityId: req.activity.id, test: req.test, user: req.user, visitId,
+        visitUuid: String(d.uuid), person: { ...d, address }, mental: mentalOf(result.mental) });
+      markReferred(referral); // the villager may have sent the code already
+    }
     res.json({ id: visitId, level: override || result.level, repairs: [], repair_needs: items.length });
-    if (referral) deliver(req.dbx, referral);
+    if (referral) deliver(referral);
     if (locationSource === 'address' && num(d.lat) == null) geocodePending(req.dbx);
   } catch (e) {
     db.exec('ROLLBACK');
@@ -416,8 +475,8 @@ app.post('/api/visits', need(), upload, (req, res) => {
   }
 });
 
-app.get('/api/visits', need(), (req, res) => {
-  const mine = req.query.mine === '1' || !['admin', 'office'].includes(req.user.role);
+ar.get('/visits', need(), mod('visits'), (req, res) => {
+  const mine = req.query.mine === '1' || !['office', ...LEAD].includes(req.user.role);
   const rows = mine
     ? db.prepare('SELECT * FROM visits WHERE created_by = ? ORDER BY id DESC LIMIT 200').all(req.user.id)
     : db.prepare('SELECT * FROM visits ORDER BY id DESC LIMIT 500').all();
@@ -434,7 +493,7 @@ app.get('/api/visits', need(), (req, res) => {
 const ticketSummary = (visitId) =>
   db.prepare('SELECT id, category, level, status FROM tickets WHERE visit_id = ? ORDER BY id').all(visitId);
 
-app.get('/api/visits/:id', need(), (req, res) => {
+ar.get('/visits/:id', need(), (req, res) => {
   const v = db.prepare('SELECT * FROM visits WHERE id = ?').get(Number(req.params.id));
   if (!access(req.user, v)) return res.status(404).json({ error: 'not found' });
   const out = serializeVisit(v, req.user);
@@ -444,25 +503,31 @@ app.get('/api/visits/:id', need(), (req, res) => {
     photos: itemPhotos.all(v.id, n.uuid).map((p) => p.id) }));
   out.tickets = db.prepare(`SELECT t.*, u.name AS assignee_name FROM tickets t LEFT JOIN users u ON u.id = t.assignee_id WHERE visit_id = ?`).all(v.id);
   out.repairs = itemsOfVisit(v.id);
-  out.creator = db.prepare('SELECT name, email FROM users WHERE id = ?').get(v.created_by);
-  if (out.creator) out.creator.phone = decrypt(prodDb.prepare('SELECT phone_enc FROM users WHERE id = ?').get(v.created_by)?.phone_enc);
-  out.line_referral = seesMentalDetail(req.user, v) ? referralOfVisit(db, v.id) : null;
+  out.creator = db.prepare('SELECT name, email, phone_enc FROM users WHERE id = ?').get(v.created_by);
+  if (out.creator) {
+    // The account's current phone; for an account that no longer exists (e.g. volunteers of a 2.x archive), the one
+    // kept in the activity's own copy.
+    const { phone_enc: kept, ...c } = out.creator;
+    out.creator = { ...c, phone: decrypt(central.prepare('SELECT phone_enc FROM users WHERE id = ?').get(v.created_by)?.phone_enc ?? kept) };
+  }
+  out.line_referral = seesMentalDetail(req.user, v) ? referralOfVisit(req.activity.id, req.test, v.id) : null;
   res.json(out);
 });
 
-app.get('/api/photos/:id', need(), (req, res) => {
+ar.get('/photos/:id', need(), (req, res) => {
   const p = db.prepare('SELECT p.*, v.created_by FROM photos p JOIN visits v ON v.id = p.visit_id WHERE p.id = ?').get(Number(req.params.id));
   if (!p || !access(req.user, { created_by: p.created_by })) return res.status(404).end();
   res.sendFile(path.join(req.uploadDir, path.basename(p.filename)));
 });
 
-mountRepairs(app, { need, upload });
-mountLine(app, { need });
+mountRepairs(ar, { need, upload, mod });
+mountLine(app, ar, { need, mod });
+mountActivityAdmin(ar, { need, LEAD });
 
 // ---------------------------------------------------------------- tickets
 
 function ticketScope(user) {
-  if (user.role === 'admin') return { where: '1=1', args: [] };
+  if (isLead(user)) return { where: '1=1', args: [] };
   if (user.role === 'office') return { where: "(t.category IN ('basic','general') OR t.level = 'red')", args: [] };
   if (user.role === 'responder') {
     // Only the categories of the responder's own specialties, whatever the level.
@@ -474,7 +539,7 @@ function ticketScope(user) {
   return null;
 }
 
-app.get('/api/tickets', need('responder', 'office', 'admin'), (req, res) => {
+ar.get('/tickets', need('responder', 'office', ...LEAD), mod('visits'), (req, res) => {
   const scope = ticketScope(req.user);
   const active = req.query.status !== 'closed';
   const rows = db.prepare(`
@@ -501,7 +566,7 @@ app.get('/api/tickets', need('responder', 'office', 'admin'), (req, res) => {
 
 const mentalSummary = (m) => (m ? { level: m.level, summary: m.summary, flags: m.flags || [] } : null);
 
-app.get('/api/tickets/count', need('responder', 'office', 'admin'), (req, res) => {
+ar.get('/tickets/count', need('responder', 'office', ...LEAD), mod('visits'), (req, res) => {
   const scope = ticketScope(req.user);
   const r = db.prepare(`SELECT COUNT(*) AS n, MAX(t.id) AS last FROM tickets t WHERE ${scope.where} AND t.status = 'open'`).get(...scope.args);
   res.json(r);
@@ -512,7 +577,7 @@ function canTouch(user, t) {
   return !!db.prepare(`SELECT 1 FROM tickets t WHERE t.id = ? AND ${scope.where}`).get(t.id, ...scope.args);
 }
 
-app.post('/api/tickets/:id/claim', need('responder', 'office', 'admin'), (req, res) => {
+ar.post('/tickets/:id/claim', need('responder', 'office', ...LEAD), mod('visits'), (req, res) => {
   const t = db.prepare('SELECT * FROM tickets WHERE id = ?').get(Number(req.params.id));
   if (!t || !canTouch(req.user, t)) return res.status(404).json({ error: 'not found' });
   db.prepare("UPDATE tickets SET assignee_id = ?, status = 'claimed', updated_at = datetime('now') WHERE id = ?").run(req.user.id, t.id);
@@ -520,7 +585,7 @@ app.post('/api/tickets/:id/claim', need('responder', 'office', 'admin'), (req, r
   res.json({ ok: true });
 });
 
-app.post('/api/tickets/:id/update', need('responder', 'office', 'admin'), (req, res) => {
+ar.post('/tickets/:id/update', need('responder', 'office', ...LEAD), mod('visits'), (req, res) => {
   const t = db.prepare('SELECT * FROM tickets WHERE id = ?').get(Number(req.params.id));
   if (!t || !canTouch(req.user, t)) return res.status(404).json({ error: 'not found' });
   const status = Object.keys(TICKET_STATUS).includes(req.body.status) ? req.body.status : t.status;
@@ -529,7 +594,7 @@ app.post('/api/tickets/:id/update', need('responder', 'office', 'admin'), (req, 
   res.json({ ok: true });
 });
 
-app.get('/api/tickets/:id/updates', need('responder', 'office', 'admin'), (req, res) => {
+ar.get('/tickets/:id/updates', need('responder', 'office', ...LEAD), mod('visits'), (req, res) => {
   res.json(db.prepare(`SELECT tu.*, u.name FROM ticket_updates tu JOIN users u ON u.id = tu.user_id WHERE ticket_id = ? ORDER BY tu.id`).all(Number(req.params.id)));
 });
 
@@ -541,21 +606,21 @@ function checkin(uid, lat, lng, accuracy) {
     .run(uid, Number(lat), Number(lng), num(accuracy));
 }
 
-app.post('/api/checkin', need(), (req, res) => {
+ar.post('/checkin', need(), (req, res) => {
   const { lat, lng, accuracy } = req.body || {};
   if (num(lat) == null || num(lng) == null) return res.status(400).json({ error: 'lat/lng' });
   checkin(req.user.id, lat, lng, accuracy);
   res.json({ ok: true });
 });
 
-app.post('/api/checkout', need(), (req, res) => {
+ar.post('/checkout', need(), (req, res) => {
   db.prepare('DELETE FROM checkins WHERE user_id = ?').run(req.user.id);
   res.json({ ok: true });
 });
 
 // ---------------------------------------------------------------- dashboard
 
-app.get('/api/dashboard', need('responder', 'office', 'admin'), (req, res) => {
+ar.get('/dashboard', need('responder', 'office', ...LEAD), mod('visits'), (req, res) => {
   const visits = db.prepare('SELECT id, lat, lng, approx_lat, approx_lng, approx_level, triage_level, override_level, created_at, address, answers, location_source, first_name, last_name, nickname FROM visits ORDER BY id DESC LIMIT 2000').all()
     .map((v) => ({
       id: v.id, lat: v.lat, lng: v.lng, created_at: v.created_at, location_source: v.location_source,
@@ -570,21 +635,7 @@ app.get('/api/dashboard', need('responder', 'office', 'admin'), (req, res) => {
   res.json({ visits, team, tickets });
 });
 
-// ---------------------------------------------------------------- users (admin)
-
-app.get('/api/users', need('admin'), (req, res) => {
-  const phones = new Map(prodDb.prepare('SELECT id, phone_enc FROM users').all().map((u) => [u.id, decrypt(u.phone_enc)]));
-  res.json(db.prepare("SELECT id, email, name, role, specialty, last_login FROM users ORDER BY role != 'pending', role, name").all()
-    .map((u) => ({ ...u, phone: phones.get(u.id) || null })));
-});
-
-app.patch('/api/users/:id', need('admin'), (req, res) => {
-  const { role, specialty } = req.body || {};
-  if (!['pending', 'volunteer', 'responder', 'fixer', 'office', 'admin'].includes(role)) return res.status(400).json({ error: 'role' });
-  const list = role === 'responder' ? parseSpecialties(specialty).join(',') || null : null;
-  db.prepare('UPDATE users SET role = ?, specialty = ? WHERE id = ?').run(role, list, Number(req.params.id));
-  res.json({ ok: true });
-});
+ar.use((req, res) => res.status(404).json({ error: 'not found' }));
 
 // Upload errors (too big, too many, wrong field) are the client's fault: answer 4xx so the
 // phone's outbox marks the visit as rejected instead of retrying it forever.
@@ -610,6 +661,11 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => console.log(`buuflood listening on :${PORT} (public URL ${PUBLIC_URL})`));
 
 // Approximate map positions for address-only visits: backfill at start, then retry failed lookups every 5 minutes.
-const geocodeAll = () => { geocodePending(prodDb); if (sandboxOpen()) geocodePending(sandboxDb()); };
+const geocodeAll = () => {
+  for (const id of liveActivityIds()) {
+    geocodePending(activityDb(id));
+    if (isOpenDb(`${id}:sandbox`)) geocodePending(sandboxDb(id));
+  }
+};
 geocodeAll();
 setInterval(geocodeAll, 5 * 60 * 1000).unref();

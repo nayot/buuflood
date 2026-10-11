@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, addressLine, timeAgo } from '../lib/api.js';
+import { api, addressLine, timeAgo, aurl } from '../lib/api.js';
 import { REPAIR_STATUS } from '../../../shared/repairs.js';
 import { Empty, Section } from '../components/ui.jsx';
 
@@ -53,8 +53,8 @@ export default function RepairDetail({ id, me, notify }) {
       <Section title={`รูปถ่าย (${r.photos.length})`}>
         <div className="grid grid-cols-3 gap-2">
           {r.photos.map((p) => (
-            <a key={p} href={`api/repair-photos/${p}`} target="_blank" rel="noreferrer">
-              <img src={`api/repair-photos/${p}`} alt="" loading="lazy" className="aspect-square w-full object-cover rounded-lg" />
+            <a key={p} href={aurl(`api/repair-photos/${p}`)} target="_blank" rel="noreferrer">
+              <img src={aurl(`api/repair-photos/${p}`)} alt="" loading="lazy" className="aspect-square w-full object-cover rounded-lg" />
             </a>
           ))}
         </div>

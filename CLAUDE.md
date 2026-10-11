@@ -11,17 +11,35 @@ User-facing documentation is in README.md; this file covers conventions only.
 - **URLs are relative everywhere** (`api/...`, `auth/...`). The client uses `base: './'` and hash routing,
   so the same build runs at `/` and behind nginx at `/buuflood/` (nginx strips the prefix). Never write a
   leading `/` in a client URL.
-- **Storage:** `node:sqlite` (`server/db.js`, schema is `CREATE TABLE IF NOT EXISTS`; add columns with
-  `ALTER TABLE` guarded by `hasColumn()` at the end of `db.js`). Photos are in `DATA_DIR/uploads`.
-- **Admin test mode:** a sandbox database in `DATA_DIR/sandbox/` (same schema, own uploads, users copied with the same
-  ids). The flag is `testUntil` in the signed session (8 h) and is honoured only for production admins. Request code uses
-  the `db` proxy from `db.js`, which resolves per request (AsyncLocalStorage) and **throws outside a request** rather than
-  falling back to production; background jobs and scripts use `prodDb` or `withDb()`. Multer callbacks lose the context,
-  so uploads use `req.uploadDir` and the wrapped `upload`. Never prepare statements at module level. Guards against
-  cross-mode writes: the outbox keeps a separate `outbox-test` key and every queued visit carries `test`; mutating API
-  calls send `X-Test-Mode`; the server answers 409 on a mismatch, which the outbox treats as "keep".
+- **Activities (3.0):** `node:sqlite` (`server/db.js`). `DATA_DIR/central.db` holds accounts (`users.role` =
+  `user | admin | pending`), `activities` (modules JSON `visits`/`repairs`, `live | archived`, join token),
+  `memberships` (role per activity: `manager | volunteer | responder | fixer | office | pending`, specialty), settings,
+  announcements and `line_referrals`. Each activity has its own file `DATA_DIR/activities/<id>/buuflood.db` (+ `uploads/`,
+  `sandbox/`) with the 2.x schema (`migrateActivity()`; add columns with `ALTER TABLE` guarded by `hasColumn()`).
+  Archived files open **read-only** (`isReadOnly()`); `openForMaintenance()` is the only way to write one (archive,
+  de-identify). The account is copied into the activity file on each request (`ensureUser()`) so joins on `users`
+  still work; central ids are AUTOINCREMENT and never reused. Labels for modules and roles: `shared/activities.js`.
+- **Activity routes:** everything about one activity is under `/api/a/:aid/…` (an Express router, `ar` in
+  `server.js`; `repairs.js`, `line.js` and `activities.js` mount on it). `activityContext` checks membership (admins
+  pass as role `admin`; archived activities only for admins and the activity's managers), picks the database and sets
+  `req.activity`, `req.modules`, `req.user` (account + role in the activity + `repairStaff`), `req.test`. Writes to an
+  archived activity answer **409 `archived`** (not 4xx-rejected: the outbox keeps the visit). Gate module routes with
+  `mod('visits')`/`mod('repairs')` and lead pages with `need(...LEAD)` (`admin`, `manager`). Account-wide routes
+  (`/api/me`, `/api/activities`, `/api/users`, `/api/join/:token`, announcements, app on/off) stay outside. On the
+  client, `api()` prefixes every other `api/…` path with the activity on screen (`setActivity()`); use `aurl()` for
+  `<img src>` and download links.
+- **Test mode:** per activity, for admins and its managers: `req.session.test = { aid, until, role, specialty }` (8 h);
+  data goes to the activity's `sandbox/`. Request code uses the `db` proxy from `db.js`, which resolves per request
+  (AsyncLocalStorage) and **throws outside a request**; background jobs and scripts open a database explicitly
+  (`activityDb(id)`, `sandboxDb(id)`). Multer callbacks lose the context, so uploads use `req.uploadDir` and the wrapped
+  `upload`. Never prepare statements at module level. Guards against cross-mode writes: the outbox keeps a separate
+  `outbox-test` key and every queued visit carries `test` and `activity`; mutating API calls send `X-Test-Mode`; the
+  server answers 409 on a mismatch, which the outbox treats as "keep".
 - **LINE referral** (`server/line.js`, `shared/line.js`, `components/LineReferral.jsx`): yellow mental results only, with
-  consent. Codes `BF-XXXXX` (`BT-` in test mode, which the webhook uses to pick the sandbox; it has no session). The form
+  consent. Codes `BF-XXXXX` (`BT-` in test mode). Referrals live in the **central** database with `activity_id`, `test`
+  and the volunteer's name, because the webhook has no session; `markReferred()` opens that activity's file (or its
+  sandbox) to close the ticket and skips archived ones. `referralConflict()` is checked before the visit transaction and
+  `upsertReferral()` runs after COMMIT (two databases, no shared transaction). The form
   registers the code at once (`POST api/line-referrals`, the server rescores the answers); the saved visit is
   authoritative. Webhook `/line/webhook` (outside `/api`, signature over `req.rawBody`) replies with a greeting + brief, or
   the greeting only and pushes the brief when the visit arrives (push needs the villager to be a friend). Greetings are
@@ -29,23 +47,33 @@ User-facing documentation is in README.md; this file covers conventions only.
   `unknown`). Never resend once
   `status = sent`. The mental ticket closes as `referred` only when the villager has sent the code. Contacts and the
   LINE user id are stored encrypted; the brief is rendered at send time. `LINE_API_BASE` points tests at a mock.
-- **Volunteer phone:** `users.phone_enc` (encrypted), always read and written on `prodDb` (it is account data, not test
-  data, and sandbox user rows don't copy it). `POST api/me/phone`; `/api/me`, `/api/users` and the visit's `creator` carry it.
-- **Sign-in domains:** `ALLOWED_DOMAINS` (`/api/me` returns them to the login page). New accounts are volunteers, except
-  those from `APPROVAL_DOMAINS` (`*` = any domain not in `ALLOWED_DOMAINS`), which start as `pending`: `need()` answers 403 `pending` for them (checked on
-  `prodUser`); only `/api/me`, `/api/me/phone` and logout work.
-- **App on/off:** `settings.app_closed` (JSON `{ message, since, by }`, production database only), set by
+- **Volunteer phone:** `users.phone_enc` (encrypted), in the central database only (account data; activity files
+  don't copy it). `POST api/me/phone`; `/api/me`, `/api/users` and the visit's `creator` carry it.
+- **Sign-in domains:** `ALLOWED_DOMAINS` (`/api/me` returns them to the login page). New accounts are `user`, except
+  those from `APPROVAL_DOMAINS` (`*` = any domain not in `ALLOWED_DOMAINS`), which start as `pending`: they can only use
+  `/api/me`, `/api/me/phone`, `/api/join/:token` (joins as a `pending` member) and logout. A manager giving a pending
+  member a role approves the account (`users.role` → `user`). Joining: `#/join/<token>`; the client remembers the token
+  in localStorage across the Google sign-in.
+- **App on/off:** `settings.app_closed` (JSON `{ message, since, by }`, central database, whole app), set by
   `POST api/app-closed` (real admins). A gate on `/api` answers **503** `closed` to non-admins (never 4xx: the outbox
   must keep queued visits); `/api/me` stays open and reports `closed`. The client shows `pages/Closed.jsx`.
-- **Announcements:** `announcements` + `announcement_acks` (production database only). The `/api` closed-app gate lets
+- **Announcements:** `announcements` + `announcement_acks` (central database, to every account). The `/api` closed-app gate lets
   `/api/announcements/*` through; `pending` and `ack` work for any signed-in account, the rest is `realAdmin`. The client
   polls every 60 s and on visibilitychange (`components/Announcement.jsx`), remembering offline acks in localStorage.
-- **Purging data:** `scripts/purge.js --all --yes` or `--older-than N` deletes visits (tickets, updates and photo rows
-  cascade), photo files and (with `--all`) check-ins, and keeps users. In Docker: `docker compose exec app node scripts/purge.js …`.
-- **Specialties:** `users.specialty` is a comma-separated list (`electrical,structural`). Always read it through
+- **Archive and purge:** archiving (admins, `POST /api/activities/:id/archive`) checkpoints the file, switches it to
+  `journal_mode = DELETE`, reopens it read-only, closes the join link and deletes the sandbox. De-identify
+  (`/deidentify`, archived only, confirm with the activity name) strips personal data and photos and keeps statistics.
+  `scripts/purge.js --activity <id> --all --yes | --older-than N` deletes a live activity's visits (members kept).
+- **Exports:** `server/activities.js`: `/admin/summary`, `/admin/export/{visits,tickets,repairs}.csv[?pii=1]` and
+  `/admin/export/snapshot.db[?decrypt=1]` (`VACUUM INTO` a temp file under `DATA_DIR/tmp`, deleted after sending;
+  decrypt is admin-only). Without `pii=1` CSVs carry no names, contacts, house numbers, positions, notes or 9Q/8Q.
+- **2.x → 3.0 migration** (`migrateLegacy()` in `db.js`, runs once when `DATA_DIR/buuflood.db` exists and `central.db` has
+  no activities): the old file and uploads become archived activity 1, admins are copied to `central.db` with the same
+  ids, LINE referrals move to central, the 2.x sandbox is deleted.
+- **Specialties:** `memberships.specialty` is a comma-separated list (`electrical,structural`). Always read it through
   `parseSpecialties()` in `shared/triage.js`, which drops invalid names. Responders see only tickets whose category's
   `specialty` is in their list (`ticketScope()` in `server.js`), at every level. Office staff see `basic`, `general`
-  and every red ticket; admins see everything.
+  and every red ticket; admins and managers see everything in the activity.
 - **Location:** `visits.location_source` is `gps` (phone at the house) or `address` (met elsewhere: `lat`/`lng` is the
   optional map pin or null). Use `navLink()`/`placeLink()`/`canLocate()` from `client/src/lib/api.js`; they fall back to a
   Google Maps address search. The safety check-in uses the volunteer's own position (`here`), not the house.
@@ -64,14 +92,17 @@ User-facing documentation is in README.md; this file covers conventions only.
   `<request uuid>:<index>`) get a queue number (`type`-`seq`). Items listed in a home visit (section 5) are a survey of
   needs with no queue: stored as `visits.repair_needs` (JSON), their photos in `photos` with `item_uuid`; the owner
   registers at the centre. Item photos are multipart files named `item_<item uuid>` (multer `.any()`). Visits from
-  2.0–2.2 may still have `repair_items` rows. Roles `fixer`, `office`, `admin` see the tab.
-- **Local testing:** `.env` with `DEV_AUTH=1`, then `/auth/dev?email=x@eng.buu.ac.th&role=responder&specialty=electrical`.
+  2.0–2.2 may still have `repair_items` rows. Roles `fixer`, `office`, `manager`, `admin` see the tab, and `volunteer` too when the activity has no `visits`
+  module (`repairStaff()`). Queue numbers restart in each activity.
+- **Local testing:** `.env` with `DEV_AUTH=1`, then `/auth/dev?email=x@eng.buu.ac.th[&admin=1]` and, to join an activity,
+  `&activity=2&role=responder&specialty=electrical`.
   DEV_AUTH is ignored when `NODE_ENV=production`. The test login redirects to `PUBLIC_URL`, so the session cookie lands
   on that host.
 - **Phone testing:** GPS and the camera need HTTPS. Run `cloudflared tunnel --url http://localhost:5173` and set
   `PUBLIC_URL` to the tunnel address; `vite.config.js` already allows `*.trycloudflare.com`.
 - **Demo data / screenshots:** run a second instance with its own `DATA_DIR` and `PORT` (for example 3001) and
-  seed it through the API with fictional households. Never take screenshots from real data.
+  seed it through the API with fictional households. Never take screenshots from real data. Seeding scripts from 2.x
+  (`api/visits`) need the `api/a/<id>/` prefix and a membership.
 - **User guide:** `docs/USER_GUIDE.md` (Thai) is the single source. The client imports it with `?raw` (`pages/Guide.jsx`)
   and renders it at `#/guide`, the only page that works without signing in. Each `##` heading becomes a jump button.
   The Dockerfile copies `docs/` into the client build stage.

@@ -8,7 +8,7 @@ import { LEVEL_COLOR } from '../components/ui.jsx';
 
 // Default view: BUU Chanthaburi Campus area (ต.โขมง อ.ท่าใหม่).
 const CENTER = [12.66, 102.03];
-const ROLE = { volunteer: 'อาสาสมัคร', responder: 'ผู้เชี่ยวชาญ', fixer: 'ช่างซ่อม', office: 'เจ้าหน้าที่', admin: 'ผู้ดูแลระบบ' };
+import { ROLE_LABEL as ROLE } from '../../../shared/activities.js';
 
 const personIcon = L.divIcon({
   className: '',

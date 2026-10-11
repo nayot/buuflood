@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, addressLine } from '../lib/api.js';
+import { api, addressLine, aurl } from '../lib/api.js';
 import { uuid } from '../lib/device.js';
 import { go } from '../lib/nav.js';
 import { REPAIR_TYPES, REPAIR_STATUS, REPAIR_CLOSED } from '../../../shared/repairs.js';
@@ -33,7 +33,7 @@ function List({ rows }) {
   if (!rows.length) return <Empty>ไม่มีรายการ</Empty>;
   return rows.map((r) => (
     <a key={r.id} href={`#/repair/${r.id}`} className="card flex items-center gap-3">
-      {r.photos[0] ? <img src={`api/repair-photos/${r.photos[0]}`} alt="" loading="lazy" className="w-16 h-16 object-cover rounded-lg shrink-0" />
+      {r.photos[0] ? <img src={aurl(`api/repair-photos/${r.photos[0]}`)} alt="" loading="lazy" className="w-16 h-16 object-cover rounded-lg shrink-0" />
         : <div className="w-16 h-16 rounded-lg bg-neutral-100 shrink-0" />}
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
@@ -55,7 +55,7 @@ function Report({ rows, query }) {
     <div className="space-y-3">
       <div className="flex gap-2 print:hidden">
         <button type="button" onClick={() => window.print()} className="btn-gold flex-1">🖨️ พิมพ์</button>
-        <a href={`api/repairs/report.csv?${query}`} className="btn-ghost flex-1">⬇️ ดาวน์โหลด CSV</a>
+        <a href={aurl(`api/repairs/report.csv?${query}`)} className="btn-ghost flex-1">⬇️ ดาวน์โหลด CSV</a>
       </div>
       <div className="card">
         <h2 className="font-bold text-lg">รายงานศูนย์ซ่อม · {new Date().toLocaleDateString('th-TH', { dateStyle: 'long' })}</h2>
