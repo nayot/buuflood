@@ -19,13 +19,13 @@ data, e.g. a Fixing Centre day in ต.โขมง next to home visits in อ.�
   **ลบข้อมูลส่วนบุคคล** then removes names, contacts, house numbers, positions, notes, screening answers and photos from
   an archived activity once follow-up is finished, keeping the statistics.
 - **Analysis:** 📊 สรุปและส่งออก, for live and archived activities: a summary (levels, needs, areas, jobs, repairs), CSV
-  downloads with or without personal data, and the activity's SQLite database (admins may add decrypted contact
+  downloads with or without personal data (visits, jobs, repairs, and the volunteers and team with what each recorded), and the activity's SQLite database (admins may add decrypted contact
   columns). On the server each activity is its own file, `data/activities/<id>/buuflood.db`.
 - **Test mode** is per activity and open to its managers too; ทดสอบเป็น includes ผู้จัดการ.
 - 🪪 **บัญชีผู้ใช้** (admins) lists every account with its activities; approve, make admin or delete.
 - A visit queued on a phone goes to the activity it was recorded in. If that activity was archived meanwhile, it stays
   on the phone as "ส่งไม่ได้: กิจกรรมนี้ปิดแล้ว" instead of being lost.
-- **Upgrade:** on first start the 2.x data becomes archived activity 1, "เยี่ยมบ้าน ต.โขมง 10–11 ต.ค. 2569", with every
+- **Upgrade:** on first start the 2.x data becomes archived activity 1, "ลงพื้นที่โขมง 10 ต.ค.", with every
   visit kept; only admin accounts carry over, so volunteers rejoin through the new activities' links. LINE referrals
   move to the central database and the 2.x test data is deleted. `scripts/purge.js` now takes `--activity <id>`.
 

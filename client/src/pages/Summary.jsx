@@ -69,6 +69,7 @@ export default function Summary({ me, activity }) {
           {visits && <><a className="btn-ghost" href={dl('visits.csv')}>⬇️ บันทึกเยี่ยมบ้าน</a><a className="btn-ghost" href={dl('visits.csv', '?pii=1')}>⬇️ บันทึกเยี่ยมบ้าน + ข้อมูลส่วนบุคคล</a>
             <a className="btn-ghost" href={dl('tickets.csv')}>⬇️ งาน</a><a className="btn-ghost" href={dl('tickets.csv', '?pii=1')}>⬇️ งาน + ข้อมูลส่วนบุคคล</a></>}
           {(repairs || s?.repairs?.total > 0) && <><a className="btn-ghost" href={dl('repairs.csv')}>⬇️ ศูนย์ซ่อม</a><a className="btn-ghost" href={dl('repairs.csv', '?pii=1')}>⬇️ ศูนย์ซ่อม + ข้อมูลส่วนบุคคล</a></>}
+          <a className="btn-ghost" href={dl('volunteers.csv')}>⬇️ อาสาสมัครและทีม</a><a className="btn-ghost" href={dl('volunteers.csv', '?pii=1')}>⬇️ อาสาสมัครและทีม + เบอร์โทร</a>
           <a className="btn-ghost" href={dl('snapshot.db')}>🗄️ ฐานข้อมูล SQLite</a>
           {me.realRole === 'admin' && <a className="btn-ghost" href={dl('snapshot.db', '?decrypt=1')}>🗄️ SQLite + ถอดรหัสเบอร์ติดต่อ</a>}
         </div>

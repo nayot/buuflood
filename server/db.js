@@ -307,7 +307,7 @@ function migrateCentral(d) {
 // Up to 2.7 there was one database, DATA_DIR/buuflood.db (+ uploads/, sandbox/). On the first start of 3.0 it becomes
 // activity 1, archived, with every record kept; only the admin accounts are carried over to the central database
 // (the archive keeps its own copy of every account, so names on visits and tickets still show). Back up DATA_DIR first.
-const LEGACY_NAME = process.env.LEGACY_ACTIVITY_NAME || 'เยี่ยมบ้าน ต.โขมง 10–11 ต.ค. 2569';
+const LEGACY_NAME = process.env.LEGACY_ACTIVITY_NAME || 'ลงพื้นที่โขมง 10 ต.ค.';
 
 function migrateLegacy(central) {
   const old = path.join(DATA_DIR, 'buuflood.db');

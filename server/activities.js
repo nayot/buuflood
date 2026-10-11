@@ -12,7 +12,7 @@ import path from 'node:path';
 import { central, db, json, getActivity, activityDir, closeActivity, openForMaintenance, createActivityFiles,
   activityDb, DATA_DIR } from './db.js';
 import { decrypt } from './crypto.js';
-import { NEEDS, CATEGORIES, TICKET_STATUS, parseSpecialties } from '../shared/triage.js';
+import { NEEDS, CATEGORIES, TICKET_STATUS, SPECIALTIES, parseSpecialties } from '../shared/triage.js';
 import { REPAIR_TYPES, REPAIR_STATUS, queueNo } from '../shared/repairs.js';
 import { MODULES, ACTIVITY_ROLES } from '../shared/activities.js';
 
@@ -235,7 +235,7 @@ export function mountActivityAdmin(ar, { need, LEAD }) {
   // CSV for analysis. Without ?pii=1: no names, contacts, house numbers, positions, notes or screening scores.
   ar.get('/admin/export/:what.csv', lead, (req, res) => {
     const pii = req.query.pii === '1';
-    const make = { visits: visitsCsv, tickets: ticketsCsv, repairs: repairsCsv }[req.params.what];
+    const make = { visits: visitsCsv, tickets: ticketsCsv, repairs: repairsCsv, volunteers: volunteersCsv }[req.params.what];
     if (!make) return res.status(404).json({ error: 'not found' });
     const rows = make(pii);
     const name = `${req.params.what}-a${req.activity.id}${req.test ? '-test' : ''}${pii ? '-pii' : ''}-${new Date().toISOString().slice(0, 10)}.csv`;
@@ -343,6 +343,27 @@ function ticketsCsv(pii) {
     if (pii) r.push(t.first_name, t.last_name, decrypt(t.phone_enc), last.get(t.id)?.note);
     return r;
   });
+  return [head, ...rows];
+}
+
+// Everyone who worked in the activity (its own copy of the accounts, so removed accounts are listed too), with what
+// they recorded. The phone is the account's current one, or the one kept in the activity's copy.
+function volunteersCsv(pii) {
+  const ROLE = { ...ACTIVITY_ROLES, admin: 'ผู้ดูแลระบบ' };
+  const head = ['ชื่อ', 'อีเมล', 'บทบาท', 'ด้าน', 'บันทึกเยี่ยมบ้าน', 'งานที่รับ', 'รับของเข้าศูนย์ซ่อม', 'ใช้งานล่าสุด'];
+  if (pii) head.push('โทรศัพท์');
+  const now = central.prepare('SELECT phone_enc FROM users WHERE id = ?');
+  const rows = db.prepare(`SELECT u.*,
+      (SELECT COUNT(*) FROM visits v WHERE v.created_by = u.id) AS visits,
+      (SELECT COUNT(*) FROM tickets t WHERE t.assignee_id = u.id) AS tickets,
+      (SELECT COUNT(*) FROM repair_items r WHERE r.created_by = u.id AND r.visit_id IS NULL) AS repairs
+    FROM users u ORDER BY visits DESC, u.name`).all()
+    .filter((u) => u.visits || u.tickets || u.repairs || u.role !== 'admin')
+    .map((u) => {
+      const r = [u.name, u.email, ROLE[u.role] || u.role, parseSpecialties(u.specialty).map((k) => SPECIALTIES[k]).join(', '), u.visits, u.tickets, u.repairs, local(u.last_login)];
+      if (pii) r.push(decrypt(now.get(u.id)?.phone_enc ?? u.phone_enc));
+      return r;
+    });
   return [head, ...rows];
 }
 
