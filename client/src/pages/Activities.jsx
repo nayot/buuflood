@@ -57,6 +57,19 @@ export default function Activities({ me, activities, current, onPick, notify, re
         <Empty>ยังไม่ได้เข้าร่วมกิจกรรมใด<br />สแกน QR หรือเปิดลิงก์เข้าร่วมจากผู้ประสานงานของกิจกรรม</Empty>
       )}
 
+      {!admin && activities.some((a) => a.status === 'archived') && (
+        <>
+          <h2 className="font-bold text-lg px-1 pt-2">เก็บถาวรแล้ว</h2>
+          {activities.filter((a) => a.status === 'archived').map((a) => (
+            <button key={a.id} onClick={() => onPick(a.id, '/summary')} className="card w-full text-left space-y-1 bg-neutral-50">
+              <div className="font-bold">📦 {a.name}</div>
+              <div className="text-sm text-neutral-600">{[a.area, dates(a)].filter(Boolean).join(' · ')}</div>
+              <div className="text-xs text-neutral-500">ดูอย่างเดียว · สรุปและดาวน์โหลดข้อมูล</div>
+            </button>
+          ))}
+        </>
+      )}
+
       {admin && (
         <>
           <div className="flex items-center gap-2 px-1 pt-2">

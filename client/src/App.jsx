@@ -83,7 +83,7 @@ function tabsFor(me, act) {
     if (seesTickets(me.role)) t.push({ to: '/tickets', label: 'งาน', icon: '🛠️', badge: !archived });
     if (seesTickets(me.role)) t.push({ to: '/map', label: 'แผนที่', icon: '🗺️' });
   }
-  if (me.repair_staff && (act.modules.includes('repairs') || archived)) t.push({ to: '/repairs', label: 'ศูนย์ซ่อม', icon: '🔧' });
+  if (me.repair_staff && act.modules.includes('repairs')) t.push({ to: '/repairs', label: 'ศูนย์ซ่อม', icon: '🔧' });
   if (LEAD.includes(me.role)) t.push({ to: archived ? '/summary' : '/members', label: archived ? 'สรุป' : 'สมาชิก', icon: archived ? '📊' : '👥', pendingBadge: !archived });
   return t;
 }
@@ -140,19 +140,26 @@ export default function App() {
   const loc = useLocationSharing(account && act ? account : null);
   const ann = useAnnouncements(account);
 
-  // Remember a join link opened before signing in; it is opened again afterwards.
+  // A join link opened while signed out is remembered across the Google sign-in, then opened once (and forgotten,
+  // whatever happens there, so a closed link can never trap anyone).
   useEffect(() => {
-    if (path.startsWith('/join/')) { try { localStorage.setItem(JOIN_KEY, path.split('/')[2]); } catch { /* private mode */ } }
-  }, [path]);
+    if (account === null && path.startsWith('/join/')) { try { localStorage.setItem(JOIN_KEY, path.split('/')[2]); } catch { /* private mode */ } }
+    if (account) {
+      let t = null;
+      try { t = localStorage.getItem(JOIN_KEY); localStorage.removeItem(JOIN_KEY); } catch { /* private mode */ }
+      if (t && !path.startsWith('/join/')) window.location.hash = `#/join/${t}`;
+    }
+  }, [account?.id, account === null, path]);
 
   const refreshMe = () => api('api/me').then((r) => {
     setAccount(r.user); setActivities(r.activities || []); setClosed(r.closed || null); setDevAuth(!!r.devAuth);
     setDomains(r.domains ? { allowed: r.domains, approval: r.approval || [] } : null); rememberLocalContacts(r.emergency);
     if (r.user) {
       // Keep the activity on screen if still allowed (admins may open any, including archived ones); else the only one.
-      const usable = (r.activities || []).filter((a) => a.role !== 'pending');
+      const usable = (r.activities || []).filter((a) => a.role && a.role !== 'pending');
+      const live = usable.filter((a) => a.status === 'live');
       setAid((cur) => {
-        const next = cur && (r.user.realRole === 'admin' || usable.some((a) => a.id === cur)) ? cur : usable.length === 1 ? usable[0].id : null;
+        const next = cur && (r.user.realRole === 'admin' || usable.some((a) => a.id === cur)) ? cur : live.length === 1 ? live[0].id : null;
         saveActivity(next);
         return next;
       });
@@ -209,15 +216,13 @@ export default function App() {
   if (!account && path === '/guide') return <Guide standalone section={query.get('s')} />;
   if (!account) return <Login error={query.get('error')} devAuth={devAuth} domains={domains} joining={path.startsWith('/join/')} />;
   const popup = <AnnouncementPopup a={ann.current} left={ann.left} onAck={ann.ack} />;
-  const pendingJoin = (() => { try { return localStorage.getItem(JOIN_KEY); } catch { return null; } })();
-  const joined = (id) => { try { localStorage.removeItem(JOIN_KEY); } catch { /* private mode */ } refreshMe(); pickActivity(id); };
+  const joined = (id) => { refreshMe(); if (account.realRole === 'pending') go('/'); else pickActivity(id); };
   const joinPage = (token) => <Join token={token} notify={notify} onJoined={joined} />;
   if (account.realRole === 'pending') {
-    if (pendingJoin && !activities.some((a) => a.role)) return <><div className="mx-auto max-w-sm p-4 pt-10">{joinPage(pendingJoin)}</div>{popup}</>;
+    if (path.startsWith('/join/')) return <><div className="mx-auto max-w-sm p-4 pt-10 space-y-3">{joinPage(path.split('/')[2])}<a href="#/" className="block text-center text-sm text-golddark underline">กลับ</a></div>{popup}</>;
     return <><Pending me={account} activities={activities} onRefresh={refreshMe} />{popup}</>;
   }
   if (closed && account.realRole !== 'admin') return <><Closed me={account} closed={closed} outbox={outbox} onRefresh={refreshMe} />{popup}</>;
-  if (pendingJoin && !path.startsWith('/join/') && path !== '/guide') { window.location.hash = `#/join/${pendingJoin}`; return null; }
 
   const admin = account.realRole === 'admin';
   const ready = act && act.id === aid;

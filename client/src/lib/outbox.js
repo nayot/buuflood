@@ -57,7 +57,13 @@ export async function flush() {
       let ok = false;
       let rejected = null;
       try {
-        const aid = item.data.activity ?? currentActivity();
+        const aid = item.data.activity;
+        if (aid == null) {
+          // Queued by a 2.x app, before activities: never guess which activity it belongs to.
+          const all = await read(mode); const x = all.find((i) => i.uuid === item.uuid);
+          if (x && !x.blocked) { x.blocked = 'บันทึกจากแอปรุ่นก่อน ไม่ทราบกิจกรรม'; await set(KEYS[mode], all); }
+          continue;
+        }
         const r = await fetch(`api/a/${aid}/visits`, { method: 'POST', body: fd, credentials: 'same-origin' });
         if (r.ok) { saved.push({ uuid: item.uuid, ...(await r.json()) }); ok = true; }
         else if (r.status === 401) break; // logged out: keep everything until they log in again
