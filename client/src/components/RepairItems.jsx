@@ -19,7 +19,7 @@ export function itemsProblem(items, { photos = true } = {}) {
 export const itemsPayload = (items) => items.map(({ photos, ...rest }) => rest);
 
 /** Damaged items to repair, each with its own photos (none with `photos={false}`). */
-export default function RepairItems({ items, onChange, notify, photos = true }) {
+export default function RepairItems({ items, onChange, notify, photos = true, max = ITEMS_MAX }) {
   const patch = (i, p) => onChange(items.map((x, j) => (j === i ? { ...x, ...p } : x)));
   const addPhotos = async (i, files) => {
     const added = [];
@@ -71,7 +71,7 @@ export default function RepairItems({ items, onChange, notify, photos = true }) 
           )}
         </div>
       ))}
-      {items.length < ITEMS_MAX && (
+      {items.length < max && (
         <button type="button" onClick={() => onChange([...items, blankItem()])} className="btn-ghost w-full">➕ เพิ่มสิ่งของที่ต้องซ่อม</button>
       )}
     </div>

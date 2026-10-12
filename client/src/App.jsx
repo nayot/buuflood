@@ -241,7 +241,7 @@ export default function App() {
     if (p.startsWith('/visit/')) return <VisitDetail id={p.split('/')[2]} me={me} notify={notify} />;
     if (p === '/tickets' && seesTickets(me.role)) return <Tickets me={me} notify={notify} onChange={(n) => setOpenTickets(n)} />;
     if (p === '/map' && seesTickets(me.role)) return <Dashboard me={me} />;
-    if (p === '/repairs' && me.repair_staff) return <Repairs notify={notify} view={query.get('view') || 'list'} idcard={!!me.idcard} />;
+    if (p === '/repairs' && me.repair_staff) return <Repairs notify={notify} view={query.get('view') || 'list'} idcard={!!me.idcard} lead={['admin', 'manager'].includes(me.role)} />;
     if (p.startsWith('/repair/')) return <RepairDetail id={p.split('/')[2]} me={me} notify={notify} />;
     if (p === '/members' && lead) return <Members me={me} activity={act} notify={notify} refreshMe={refreshAct} />;
     if (p === '/summary' && lead) return <Summary me={me} activity={act} />;

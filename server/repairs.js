@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { db, json } from './db.js';
-import { encrypt, decrypt } from './crypto.js';
+import { encrypt, decrypt, ID_CODE_RE } from './crypto.js';
 import { REPAIR_TYPES, REPAIR_STATUS, ITEM_PHOTOS_MAX, ITEMS_MAX, queueNo } from '../shared/repairs.js';
 import { contactError, cleanPhone, cleanLine, cleanEmail } from '../shared/contact.js';
 
@@ -38,14 +38,15 @@ export function itemsError(items, files, { photoRequired = true } = {}) {
 export function insertItems({ items, files, owner, visitId, userId }) {
   const nextSeq = db.prepare('SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM repair_items WHERE type = ?');
   const ins = db.prepare(`INSERT INTO repair_items (uuid, type, seq, visit_id, created_by, owner_name, phone_enc, line_enc, email_enc,
-    area, type_other, brand, problem) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    area, type_other, brand, problem, owner_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const insP = db.prepare('INSERT INTO repair_photos (item_id, filename) VALUES (?, ?)');
   const out = [];
   for (const it of items) {
     const seq = nextSeq.get(it.type).n;
     const id = Number(ins.run(String(it.uuid), it.type, seq, visitId ?? null, userId, owner.name,
       encrypt(cleanPhone(owner.phone)), encrypt(cleanLine(owner.line)), encrypt(cleanEmail(owner.email)),
-      JSON.stringify(areaOf(owner.area)), it.type === 'OT' ? str(it.type_other, 100) : null, str(it.brand, 100), str(it.problem, 500)).lastInsertRowid);
+      JSON.stringify(areaOf(owner.area)), it.type === 'OT' ? str(it.type_other, 100) : null, str(it.brand, 100), str(it.problem, 500),
+      owner.code || null).lastInsertRowid);
     for (const f of files.filter((x) => x.fieldname === `item_${it.uuid}`)) insP.run(id, f.filename);
     out.push({ id, queue: queueNo(it.type, seq) });
   }
@@ -71,6 +72,16 @@ function canSee(user, item) {
   if (user.repairStaff || item.created_by === user.id) return true;
   return !!(item.visit_id && db.prepare('SELECT 1 FROM visits WHERE id = ? AND created_by = ?').get(item.visit_id, user.id));
 }
+
+// One item per owner in an activity: the same ID card (owner_code from the scan) or, without a scan, the same name.
+// A card's code also catches an earlier name-only registration of that name. Activity leads may allow more, with a reason.
+const bare = (s) => String(s || '').replace(/\s+/g, '');
+export function earlierItems(code, name) {
+  const rows = db.prepare('SELECT type, seq, status, owner_name, owner_code FROM repair_items WHERE visit_id IS NULL ORDER BY id').all();
+  return rows.filter((r) => (code && r.owner_code === code) || ((!code || !r.owner_code) && bare(r.owner_name) === bare(name)))
+    .map((r) => ({ queue: queueNo(r.type, r.seq), type_label: REPAIR_TYPES[r.type] || r.type, status: r.status }));
+}
+const LEADS = ['admin', 'manager'];
 
 const sortItems = (rows) => rows.sort((a, b) => TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type) || a.seq - b.seq);
 
@@ -141,6 +152,12 @@ export function mountRepairs(app, { need, upload, mod }) {
     const err = itemsError(d.items, files);
     if (err) return fail(err);
     if (!d.items.length) return fail('items required');
+    const code = ID_CODE_RE.test(String(d.id_code || '')) ? String(d.id_code) : null;
+    const override = LEADS.includes(req.user.role) && d.override ? str(d.override.reason, 300) : null;
+    if (d.override && !override) return fail(LEADS.includes(req.user.role) ? 'override reason' : 'override not allowed');
+    if (d.items.length > 1 && !override) return fail('one item');
+    const earlier = earlierItems(code, name);
+    if (earlier.length && !override) { removeFiles(files); return res.status(409).json({ error: 'already', items: earlier }); }
     // Item uuids are namespaced by the request uuid so a retried walk-in is recognised by its first item.
     const items = d.items.map((it, i) => ({ ...it, file_uuid: it.uuid, uuid: `${d.uuid}:${i}` }));
     const filesRenamed = files.map((f) => {
@@ -149,10 +166,11 @@ export function mountRepairs(app, { need, upload, mod }) {
     });
     db.exec('BEGIN');
     try {
-      const out = insertItems({ items, files: filesRenamed, owner: { name, phone: d.phone, line: d.line, email: d.email, area: d.area }, visitId: null, userId: req.user.id });
+      const out = insertItems({ items, files: filesRenamed, owner: { name, phone: d.phone, line: d.line, email: d.email, area: d.area, code }, visitId: null, userId: req.user.id });
       const insU = db.prepare('INSERT INTO repair_updates (item_id, user_id, status, note) VALUES (?, ?, ?, ?)');
       const setS = db.prepare("UPDATE repair_items SET status = 'received' WHERE id = ?");
-      for (const o of out) { setS.run(o.id); insU.run(o.id, req.user.id, 'received', 'รับเข้าศูนย์ (ลงทะเบียนที่ศูนย์)'); }
+      const note = `รับเข้าศูนย์ (ลงทะเบียนที่ศูนย์)${override ? ` · อนุญาตเกิน 1 ชิ้นต่อคน: ${override}` : ''}`;
+      for (const o of out) { setS.run(o.id); insU.run(o.id, req.user.id, 'received', note); }
       db.exec('COMMIT');
       res.json({ items: out });
     } catch (e) {

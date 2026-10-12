@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.2.0 — 2026-10-12
+
+**One item per person at the Fixing Centre.**
+
+- A walk-in registers **one item**. The ID card scan now also reads the ID number, which the server turns at once into a
+  one-way code (HMAC-SHA256 with `DATA_KEY` and the activity id) stored on the item as `owner_code`. The number itself is
+  never returned to the phone or stored, and the codes of one card differ between activities.
+- After a scan the form shows whether the card has been used in this activity: ✓ not yet, or ⛔ with the earlier queue
+  numbers. A misread number fails the Thai ID check digit and the form asks for another photo.
+- Without a scan (no card, or scan off) the owner is matched by first and last name, spaces ignored. A card also catches
+  an earlier name-only registration of the same name; the same name on a different card counts as a different person.
+- The activity's **managers and admins** can tick **อนุญาตเกินสิทธิ์ 1 ชิ้นต่อคน** with a reason; the reason goes into
+  the item's history. Others get 409 `already` (with the earlier queue numbers) or 400 `one item`.
+- ลบข้อมูลส่วนบุคคล clears the codes. They are not in any CSV.
+
 ## 3.1.0 — 2026-10-12
 
 **Thai ID card scan at the Fixing Centre.** On ➕ รับของที่ศูนย์, **📷 สแกนบัตรประชาชน** photographs the front of the

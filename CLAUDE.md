@@ -98,6 +98,10 @@ User-facing documentation is in README.md; this file covers conventions only.
   photo in memory (multer memoryStorage, never on disk) → OpenRouter `models` [first, fallback] with
   `provider.data_collection: 'deny'` → only name/address fields (`cleanCard()` drops 13-digit runs). Off without
   `OPENROUTER_API_KEY` (`/me` → `idcard`). Never store or log the photo, the ID number or the model's raw reply.
+  **One item per person** (3.2): the scan turns a check-digit-valid ID number into `idCode(activityId, id)` (HMAC with
+  `DATA_KEY`), returned as `id_code` with any earlier items; the walk-in stores it as `repair_items.owner_code`.
+  `earlierItems()` matches by code, or by name (spaces ignored) when either side has no code. Leads (`admin`,
+  `manager`) may send `override: { reason }`.
   Tests use a mock via `OPENROUTER_BASE`; never test with real cards.
 - **Local testing:** `.env` with `DEV_AUTH=1`, then `/auth/dev?email=x@eng.buu.ac.th[&admin=1]` and, to join an activity,
   `&activity=2&role=responder&specialty=electrical`.

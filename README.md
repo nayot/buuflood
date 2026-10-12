@@ -81,7 +81,8 @@ Roles are per activity (`memberships`), except `admin`, which is an account role
   "no contact" tick). Contacts are encrypted at rest (AES-256-GCM, key `DATA_KEY`). National IDs and the relief-form
   fields of 1.x visits stay in the database but are no longer shown; purge them when the project ends.
 - The ID card scan sends the card photo to OpenRouter (providers that keep no data) and stores none of it; only the
-  name and address fields the volunteer checks are saved.
+  name and address fields the volunteer checks are saved, plus a keyed one-way code of the ID number (per activity) for
+  the one-item-per-person rule. The number itself is never stored; de-identifying an archive clears the codes.
 - The 2Q/9Q/8Q answers are health data: only admins, the volunteer who asked and mental-health responders see them.
   Others see the level and the totals.
 - When an activity is over: archive it in the app, export what the follow-up needs, then remove its personal data
