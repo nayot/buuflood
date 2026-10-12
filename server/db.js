@@ -154,7 +154,7 @@ function migrateActivity(d) {
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     owner_name TEXT NOT NULL,
     phone_enc TEXT, line_enc TEXT, email_enc TEXT,
-    area TEXT,                                    -- JSON: moo, village, tambon, amphoe, province
+    area TEXT,                                    -- JSON: house_no, moo, village, tambon, amphoe, province
     type_other TEXT, brand TEXT, problem TEXT,
     status TEXT NOT NULL DEFAULT 'registered',
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -178,6 +178,11 @@ function migrateActivity(d) {
 
   CREATE INDEX IF NOT EXISTS idx_repair_visit ON repair_items(visit_id);
   `);
+  if (!hasColumn('repair_items', 'owner_code')) {
+    // 3.2: one item per ID card. A keyed one-way code of the owner's ID number (crypto.idCode); the number is never stored.
+    d.exec('ALTER TABLE repair_items ADD COLUMN owner_code TEXT');
+  }
+  d.exec('CREATE INDEX IF NOT EXISTS idx_repair_owner ON repair_items(owner_code)');
 
   // Mental-health referrals to the BUU Flood Help LINE OA (server/line.js). A row can exist before its visit (registered
   // from the form, or the villager sent the code first); visit_id is filled in when the visit is uploaded.

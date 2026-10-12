@@ -1,7 +1,11 @@
 // Thai ID card scan for the Fixing Centre's walk-in form: a photo of the card front goes to a vision model on
-// OpenRouter, which returns only the holder's name and address. The photo stays in memory and is dropped after the
-// call; the ID number, birth date and face are never asked for, returned or stored. Off unless OPENROUTER_API_KEY is set.
+// OpenRouter, which reads the holder's name, address and ID number. The photo stays in memory and is dropped after the
+// call. The ID number only becomes a keyed one-way code (crypto.idCode) for the one-item-per-card rule; the number, birth
+// date and face are never returned or stored. Off unless OPENROUTER_API_KEY is set.
 import multer from 'multer';
+import { db } from './db.js';
+import { idCode, validThaiId } from './crypto.js';
+import { REPAIR_TYPES, queueNo } from '../shared/repairs.js';
 
 const KEY = process.env.OPENROUTER_API_KEY || '';
 const BASE = (process.env.OPENROUTER_BASE || 'https://openrouter.ai/api/v1').replace(/\/$/, '');
@@ -10,16 +14,16 @@ const MODELS = (process.env.IDCARD_MODELS || 'google/gemini-3.5-flash-lite,googl
 export const idcardEnabled = !!KEY;
 
 const FIELDS = ['prefix', 'first_name', 'last_name', 'house_no', 'moo', 'tambon', 'amphoe', 'province'];
-const PROMPT = 'This is a photo of the front of a Thai national ID card. Read ONLY the holder\'s name and address. '
-  + 'Reply with JSON only, no other text: {"prefix":"","first_name":"","last_name":"","house_no":"","moo":"","tambon":"","amphoe":"","province":""} '
+const PROMPT = 'This is a photo of the front of a Thai national ID card. Read ONLY the holder\'s ID number, name and address. '
+  + 'Reply with JSON only, no other text: {"id_number":"","prefix":"","first_name":"","last_name":"","house_no":"","moo":"","tambon":"","amphoe":"","province":""} '
   + 'in Thai script as printed. prefix = นาย/นาง/นางสาว etc. moo = the number only. tambon/amphoe/province without ต./อ./จ. prefixes. '
-  + 'Use "" for anything not visible. Do not include the ID number or birth date. '
+  + 'id_number = the 13-digit เลขประจำตัวประชาชน, digits only. Use "" for anything not visible. Do not include the birth date. '
   + 'If the photo is not a Thai ID card, reply {"not_card":true}.';
 
 const strip = (v) => String(v ?? '').replace(/\s+/g, ' ').trim()
   .replace(/^(ตำบล|อำเภอ|จังหวัด|ต\.|อ\.|จ\.|หมู่ที่|ม\.)\s*/, '').slice(0, 100);
 
-/** Keep only the expected fields; drop anything that looks like an ID number (13 digits) just in case. */
+/** Keep only the name and address fields; drop anything in them that looks like an ID number (13 digits). */
 export function cleanCard(o) {
   if (!o || typeof o !== 'object' || o.not_card) return null;
   const out = Object.fromEntries(FIELDS.map((k) => [k, strip(o[k])]));
@@ -72,8 +76,13 @@ export function mountIdcard(router, { need, mod }) {
         let parsed = null;
         try { parsed = m && JSON.parse(m[0]); } catch { /* not JSON */ }
         const card = cleanCard(parsed);
+        const id = validThaiId(parsed?.id_number);
         if (!card) return res.status(422).json({ error: 'not read' });
-        res.json(card);
+        // The number becomes a code at once; a misread number fails the check digit and gives no code.
+        const code = id ? idCode(req.activity.id, id) : null;
+        const already = code ? db.prepare('SELECT type, seq, status FROM repair_items WHERE owner_code = ? AND visit_id IS NULL ORDER BY id')
+          .all(code).map((r) => ({ queue: queueNo(r.type, r.seq), type_label: REPAIR_TYPES[r.type] || r.type, status: r.status })) : [];
+        res.json({ ...card, id_code: code, already });
       } catch (e) {
         console.error('idcard:', e.name === 'AbortError' ? 'timeout' : e.message);
         res.status(502).json({ error: 'read failed' });

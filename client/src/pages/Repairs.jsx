@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, addressLine, aurl } from '../lib/api.js';
 import { compressPhoto, uuid } from '../lib/device.js';
 import { go } from '../lib/nav.js';
-import { REPAIR_TYPES, REPAIR_STATUS, REPAIR_CLOSED } from '../../../shared/repairs.js';
+import { REPAIR_TYPES, REPAIR_STATUS, REPAIR_CLOSED, ITEMS_MAX } from '../../../shared/repairs.js';
 import { contactError } from '../../../shared/contact.js';
 import { Empty, Field, Section } from '../components/ui.jsx';
 import ContactFields from '../components/ContactFields.jsx';
@@ -93,7 +93,8 @@ const blankOwner = () => ({ uuid: uuid(), first_name: '', last_name: '', phone: 
 const SCAN_ERRORS = { 422: 'อ่านชื่อจากรูปไม่ได้ ถ่ายใหม่ให้เห็นด้านหน้าบัตรเต็มใบ ไม่สะท้อนแสง หรือพิมพ์เอง',
   429: 'สแกนถี่เกินไป รอสักครู่', 503: 'ยังไม่ได้เปิดใช้การสแกนบัตรบนเซิร์ฟเวอร์' };
 
-// Photo of the ID card front → name and address filled in. The server reads it with a vision model and keeps nothing.
+// Photo of the ID card front → name and address filled in, and a code of the ID number for the one-item rule.
+// The server reads it with a vision model and keeps nothing; the number itself never reaches the phone.
 function IdCardScan({ onRead, notify }) {
   const input = useRef(null);
   const [busy, setBusy] = useState(false);
@@ -117,27 +118,47 @@ function IdCardScan({ onRead, notify }) {
       <button type="button" disabled={busy} onClick={() => input.current.click()} className="btn-ghost w-full">
         {busy ? 'กำลังอ่านบัตร…' : '📷 สแกนบัตรประชาชน (กรอกชื่อและที่อยู่ให้)'}
       </button>
-      <p className="text-xs text-neutral-500">ขออนุญาตเจ้าของก่อนถ่าย ถ่ายด้านหน้าบัตรให้เต็มใบ ระบบอ่านเฉพาะชื่อและที่อยู่
-        ไม่เก็บรูปบัตร เลขประจำตัวประชาชน หรือวันเกิด</p>
+      <p className="text-xs text-neutral-500">ขออนุญาตเจ้าของก่อนถ่าย ถ่ายด้านหน้าบัตรให้เต็มใบ ระบบกรอกชื่อและที่อยู่ให้ และใช้เลขบัตรตรวจสิทธิ์
+        1 ชิ้นต่อคน โดยเก็บเป็นรหัสที่ย้อนกลับเป็นเลขบัตรไม่ได้ ไม่เก็บรูปบัตร เลขประจำตัวประชาชน หรือวันเกิด</p>
     </div>
   );
 }
 
+const itemsLine = (list) => list.map((i) => `${i.queue} ${i.type_label}`).join(' · ');
+
+// Whether this owner may still register: from the card scan, or the server's answer when saving.
+function Entitlement({ scan, blocked, idcard }) {
+  const earlier = blocked || scan?.already;
+  if (earlier?.length) {
+    return <p className="rounded-lg bg-lvred/10 border border-lvred text-lvred text-sm p-2">⛔ ลงทะเบียนแล้ว (สิทธิ์ 1 ชิ้นต่อคน): <b>{itemsLine(earlier)}</b></p>;
+  }
+  if (!scan) return idcard ? <p className="text-xs text-neutral-500">ยังไม่ได้สแกนบัตร: ระบบตรวจสิทธิ์จากชื่อและนามสกุลแทน</p> : null;
+  if (!scan.id_code) return <p className="rounded-lg bg-goldpale text-sm p-2">อ่านเลขบัตรไม่ชัด: ถ่ายใหม่เพื่อตรวจสิทธิ์ด้วยบัตร (ถ้าไม่ถ่ายใหม่ ระบบตรวจจากชื่อแทน)</p>;
+  return <p className="rounded-lg bg-lvgreen/10 text-sm p-2">✓ ตรวจบัตรแล้ว ยังไม่เคยลงทะเบียนในกิจกรรมนี้</p>;
+}
+
 // Walk-in: the owner brings items to the centre. Needs signal, so the queue numbers come back at once.
-function WalkIn({ notify, onSaved, idcard }) {
+// One item per person (by ID card, or by name without a scan); the activity's leads may allow more, with a reason.
+function WalkIn({ notify, onSaved, idcard, lead }) {
   const [o, setO] = useState(blankOwner);
+  const [scan, setScan] = useState(null); // { id_code, already } from the last card scan
+  const [blocked, setBlocked] = useState(null); // earlier items the server reported when saving
+  const [ov, setOv] = useState({ on: false, reason: '' }); // lead's exception
   const [scanned, setScanned] = useState({}); // fields filled from the card, highlighted until edited
   const [items, setItems] = useState([blankItem()]);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
-  const set = (p) => { setO((s) => ({ ...s, ...p })); setScanned((x) => ({ ...x, ...Object.fromEntries(Object.keys(p).map((k) => [k, false])) })); };
+  const set = (p) => { if ('first_name' in p || 'last_name' in p) setBlocked(null); setO((s) => ({ ...s, ...p })); setScanned((x) => ({ ...x, ...Object.fromEntries(Object.keys(p).map((k) => [k, false])) })); };
   const setArea = (k, v) => { setO((s) => ({ ...s, area: { ...s.area, [k]: v } })); setScanned((x) => ({ ...x, [k]: false })); };
   const fromCard = (c) => {
     const top = Object.fromEntries(['first_name', 'last_name'].filter((k) => c[k]).map((k) => [k, c[k]]));
     const area = Object.fromEntries(['house_no', 'moo', 'tambon', 'amphoe', 'province'].filter((k) => c[k]).map((k) => [k, c[k]]));
     setO((s) => ({ ...s, ...top, area: { ...s.area, ...area } }));
     setScanned(Object.fromEntries([...Object.keys(top), ...Object.keys(area)].map((k) => [k, true])));
+    setScan({ id_code: c.id_code || null, already: c.already || [] });
+    setBlocked(null);
   };
+  const maxItems = lead && ov.on ? ITEMS_MAX : 1;
   const hl = (k) => (scanned[k] ? 'bg-goldpale! border-golddark!' : '');
 
   const submit = async (e) => {
@@ -148,17 +169,24 @@ function WalkIn({ notify, onSaved, idcard }) {
     if (!items.length) return notify('เพิ่มสิ่งของอย่างน้อย 1 ชิ้น');
     const ip = itemsProblem(items);
     if (ip) return notify(ip);
+    if (items.length > maxItems) return notify('รับได้ 1 ชิ้นต่อคน');
+    if (lead && ov.on && !ov.reason.trim()) return notify('ใส่เหตุผลที่อนุญาตเกินสิทธิ์');
+    if (!(lead && ov.on) && (blocked || scan?.already)?.length) return notify('เจ้าของรายนี้ลงทะเบียนครบสิทธิ์แล้ว');
     if (!navigator.onLine) return notify('ต้องมีสัญญาณเพื่อออกเลขคิว');
     setBusy(true);
     const fd = new FormData();
-    fd.append('data', JSON.stringify({ ...o, items: itemsPayload(items) }));
+    fd.append('data', JSON.stringify({ ...o, items: itemsPayload(items), id_code: scan?.id_code || null,
+      override: lead && ov.on ? { reason: ov.reason.trim() } : null }));
     for (const it of items) it.photos.forEach((p, i) => fd.append(`item_${it.uuid}`, p.blob, `item-${i + 1}.jpg`));
     try {
       const r = await api('api/repairs', { method: 'POST', body: fd });
       items.forEach((it) => it.photos.forEach((p) => URL.revokeObjectURL(p.url)));
       setDone({ name: `${o.first_name} ${o.last_name}`, items: r.items });
-      setO(blankOwner()); setItems([blankItem()]); setScanned({}); onSaved();
-    } catch (err) { notify(err.status ? `บันทึกไม่สำเร็จ: ${err.message}` : 'ส่งไม่สำเร็จ ตรวจสอบสัญญาณแล้วลองใหม่'); }
+      setO(blankOwner()); setItems([blankItem()]); setScanned({}); setScan(null); setBlocked(null); setOv({ on: false, reason: '' }); onSaved();
+    } catch (err) {
+      if (err.status === 409 && err.body?.items) { setBlocked(err.body.items); notify('เจ้าของรายนี้ลงทะเบียนครบสิทธิ์แล้ว'); }
+      else notify(err.status ? `บันทึกไม่สำเร็จ: ${err.message}` : 'ส่งไม่สำเร็จ ตรวจสอบสัญญาณแล้วลองใหม่');
+    }
     setBusy(false);
   };
 
@@ -179,6 +207,7 @@ function WalkIn({ notify, onSaved, idcard }) {
     <form onSubmit={submit} className="space-y-3">
       <Section title="เจ้าของ">
         {idcard && <IdCardScan onRead={fromCard} notify={notify} />}
+        <Entitlement scan={scan} blocked={blocked} idcard={idcard} />
         <div className="grid grid-cols-2 gap-2">
           <Field label="ชื่อ *"><input className={hl('first_name')} value={o.first_name} onChange={(e) => set({ first_name: e.target.value })} /></Field>
           <Field label="นามสกุล *"><input className={hl('last_name')} value={o.last_name} onChange={(e) => set({ last_name: e.target.value })} /></Field>
@@ -193,15 +222,22 @@ function WalkIn({ notify, onSaved, idcard }) {
           <Field label="จังหวัด" className="col-span-2"><input className={hl('province')} value={o.area.province} onChange={(e) => setArea('province', e.target.value)} /></Field>
         </div>
       </Section>
-      <Section title="สิ่งของ" hint="ถ่ายรูปทุกชิ้นตอนรับเข้า">
-        <RepairItems items={items} onChange={setItems} notify={notify} />
+      <Section title="สิ่งของ" hint="1 ชิ้นต่อคน ถ่ายรูปตอนรับเข้า">
+        <RepairItems items={items} onChange={setItems} notify={notify} max={maxItems} />
+        {lead && (
+          <div className="space-y-2 rounded-lg border border-neutral-200 p-2">
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={ov.on} onChange={(e) => setOv({ ...ov, on: e.target.checked })} />
+              อนุญาตเกินสิทธิ์ 1 ชิ้นต่อคน (ผู้จัดการ)</label>
+            {ov.on && <input value={ov.reason} onChange={(e) => setOv({ ...ov, reason: e.target.value })} placeholder="เหตุผล เช่น ปั๊มน้ำที่ต้องใช้ในบ้าน" />}
+          </div>
+        )}
       </Section>
       <button disabled={busy} className="btn-primary w-full text-lg py-4">{busy ? 'กำลังบันทึก…' : 'ลงทะเบียนและออกเลขคิว'}</button>
     </form>
   );
 }
 
-export default function Repairs({ notify, view = 'list', idcard = false }) {
+export default function Repairs({ notify, view = 'list', idcard = false, lead = false }) {
   const [rows, setRows] = useState(null);
   const [f, setF] = useState({ type: '', status: '', open: false, q: '' });
   const query = useMemo(() => new URLSearchParams({ ...(f.type && { type: f.type }), ...(f.status && { status: f.status }),
@@ -217,7 +253,7 @@ export default function Repairs({ notify, view = 'list', idcard = false }) {
           <button key={k} type="button" onClick={() => go(`/repairs?view=${k}`)} className={`rounded-full px-3 py-1.5 ${view === k ? 'bg-ink text-white' : 'bg-white'}`}>{l}</button>
         ))}
       </div>
-      {view === 'new' ? <WalkIn notify={notify} onSaved={load} idcard={idcard} /> : (
+      {view === 'new' ? <WalkIn notify={notify} onSaved={load} idcard={idcard} lead={lead} /> : (
         <>
           <Filters f={f} setF={setF} />
           {rows === null ? <Empty>กำลังโหลด…</Empty> : view === 'report' ? <Report rows={rows} query={query} /> : <List rows={rows} />}

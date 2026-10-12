@@ -121,6 +121,9 @@ export function mountActivities(app, { realAdmin }) {
         DELETE FROM photos; DELETE FROM repair_photos; DELETE FROM checkins;
         UPDATE line_referrals SET first_name = NULL, last_name = NULL, phone_enc = NULL, line_enc = NULL, line_user_enc = NULL, area = NULL;
         UPDATE users SET name = 'ผู้ใช้ #' || id, email = 'user' || id || '@removed', picture = NULL, phone_enc = NULL;`);
+      if (d.prepare('PRAGMA table_info(repair_items)').all().some((c) => c.name === 'owner_code')) {
+        d.exec('UPDATE repair_items SET owner_code = NULL'); // the ID card codes (3.2)
+      }
       d.exec('COMMIT');
       d.exec('VACUUM');
     } catch (e) {
