@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, addressLine, aurl } from '../lib/api.js';
-import { uuid } from '../lib/device.js';
+import { compressPhoto, uuid } from '../lib/device.js';
 import { go } from '../lib/nav.js';
 import { REPAIR_TYPES, REPAIR_STATUS, REPAIR_CLOSED } from '../../../shared/repairs.js';
 import { contactError } from '../../../shared/contact.js';
@@ -88,16 +88,57 @@ function Report({ rows, query }) {
 }
 
 const blankOwner = () => ({ uuid: uuid(), first_name: '', last_name: '', phone: '', line: '', email: '', no_contact: false,
-  area: { moo: '', village: '', tambon: '', amphoe: '', province: '' } });
+  area: { house_no: '', moo: '', village: '', tambon: '', amphoe: '', province: '' } });
+
+const SCAN_ERRORS = { 422: 'อ่านชื่อจากรูปไม่ได้ ถ่ายใหม่ให้เห็นด้านหน้าบัตรเต็มใบ ไม่สะท้อนแสง หรือพิมพ์เอง',
+  429: 'สแกนถี่เกินไป รอสักครู่', 503: 'ยังไม่ได้เปิดใช้การสแกนบัตรบนเซิร์ฟเวอร์' };
+
+// Photo of the ID card front → name and address filled in. The server reads it with a vision model and keeps nothing.
+function IdCardScan({ onRead, notify }) {
+  const input = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const pick = async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    if (!navigator.onLine) return notify('ต้องมีสัญญาณเพื่อสแกนบัตร');
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('photo', await compressPhoto(f, 1600, 0.85), 'card.jpg');
+      onRead(await api('api/repairs/idcard', { method: 'POST', body: fd }));
+      notify('อ่านบัตรแล้ว ตรวจช่องสีเหลืองให้ตรงกับบัตร');
+    } catch (err) { notify(SCAN_ERRORS[err.status] || 'อ่านบัตรไม่สำเร็จ ลองใหม่หรือพิมพ์เอง'); }
+    setBusy(false);
+  };
+  return (
+    <div className="space-y-1">
+      <input ref={input} type="file" accept="image/*" capture="environment" className="hidden" onChange={pick} />
+      <button type="button" disabled={busy} onClick={() => input.current.click()} className="btn-ghost w-full">
+        {busy ? 'กำลังอ่านบัตร…' : '📷 สแกนบัตรประชาชน (กรอกชื่อและที่อยู่ให้)'}
+      </button>
+      <p className="text-xs text-neutral-500">ขออนุญาตเจ้าของก่อนถ่าย ถ่ายด้านหน้าบัตรให้เต็มใบ ระบบอ่านเฉพาะชื่อและที่อยู่
+        ไม่เก็บรูปบัตร เลขประจำตัวประชาชน หรือวันเกิด</p>
+    </div>
+  );
+}
 
 // Walk-in: the owner brings items to the centre. Needs signal, so the queue numbers come back at once.
-function WalkIn({ notify, onSaved }) {
+function WalkIn({ notify, onSaved, idcard }) {
   const [o, setO] = useState(blankOwner);
+  const [scanned, setScanned] = useState({}); // fields filled from the card, highlighted until edited
   const [items, setItems] = useState([blankItem()]);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
-  const set = (p) => setO((s) => ({ ...s, ...p }));
-  const setArea = (k, v) => setO((s) => ({ ...s, area: { ...s.area, [k]: v } }));
+  const set = (p) => { setO((s) => ({ ...s, ...p })); setScanned((x) => ({ ...x, ...Object.fromEntries(Object.keys(p).map((k) => [k, false])) })); };
+  const setArea = (k, v) => { setO((s) => ({ ...s, area: { ...s.area, [k]: v } })); setScanned((x) => ({ ...x, [k]: false })); };
+  const fromCard = (c) => {
+    const top = Object.fromEntries(['first_name', 'last_name'].filter((k) => c[k]).map((k) => [k, c[k]]));
+    const area = Object.fromEntries(['house_no', 'moo', 'tambon', 'amphoe', 'province'].filter((k) => c[k]).map((k) => [k, c[k]]));
+    setO((s) => ({ ...s, ...top, area: { ...s.area, ...area } }));
+    setScanned(Object.fromEntries([...Object.keys(top), ...Object.keys(area)].map((k) => [k, true])));
+  };
+  const hl = (k) => (scanned[k] ? 'bg-goldpale! border-golddark!' : '');
 
   const submit = async (e) => {
     e.preventDefault();
@@ -116,7 +157,7 @@ function WalkIn({ notify, onSaved }) {
       const r = await api('api/repairs', { method: 'POST', body: fd });
       items.forEach((it) => it.photos.forEach((p) => URL.revokeObjectURL(p.url)));
       setDone({ name: `${o.first_name} ${o.last_name}`, items: r.items });
-      setO(blankOwner()); setItems([blankItem()]); onSaved();
+      setO(blankOwner()); setItems([blankItem()]); setScanned({}); onSaved();
     } catch (err) { notify(err.status ? `บันทึกไม่สำเร็จ: ${err.message}` : 'ส่งไม่สำเร็จ ตรวจสอบสัญญาณแล้วลองใหม่'); }
     setBusy(false);
   };
@@ -137,17 +178,19 @@ function WalkIn({ notify, onSaved }) {
   return (
     <form onSubmit={submit} className="space-y-3">
       <Section title="เจ้าของ">
+        {idcard && <IdCardScan onRead={fromCard} notify={notify} />}
         <div className="grid grid-cols-2 gap-2">
-          <Field label="ชื่อ *"><input value={o.first_name} onChange={(e) => set({ first_name: e.target.value })} /></Field>
-          <Field label="นามสกุล *"><input value={o.last_name} onChange={(e) => set({ last_name: e.target.value })} /></Field>
+          <Field label="ชื่อ *"><input className={hl('first_name')} value={o.first_name} onChange={(e) => set({ first_name: e.target.value })} /></Field>
+          <Field label="นามสกุล *"><input className={hl('last_name')} value={o.last_name} onChange={(e) => set({ last_name: e.target.value })} /></Field>
         </div>
         <ContactFields v={o} set={set} />
         <div className="grid grid-cols-2 gap-2">
-          <Field label="หมู่ที่"><input value={o.area.moo} onChange={(e) => setArea('moo', e.target.value)} /></Field>
-          <Field label="หมู่บ้าน"><input value={o.area.village} onChange={(e) => setArea('village', e.target.value)} /></Field>
-          <Field label="ตำบล"><input value={o.area.tambon} onChange={(e) => setArea('tambon', e.target.value)} /></Field>
-          <Field label="อำเภอ"><input value={o.area.amphoe} onChange={(e) => setArea('amphoe', e.target.value)} /></Field>
-          <Field label="จังหวัด" className="col-span-2"><input value={o.area.province} onChange={(e) => setArea('province', e.target.value)} /></Field>
+          <Field label="บ้านเลขที่"><input className={hl('house_no')} value={o.area.house_no} onChange={(e) => setArea('house_no', e.target.value)} /></Field>
+          <Field label="หมู่ที่"><input className={hl('moo')} inputMode="numeric" value={o.area.moo} onChange={(e) => setArea('moo', e.target.value)} /></Field>
+          <Field label="หมู่บ้าน" className="col-span-2"><input value={o.area.village} onChange={(e) => setArea('village', e.target.value)} /></Field>
+          <Field label="ตำบล"><input className={hl('tambon')} value={o.area.tambon} onChange={(e) => setArea('tambon', e.target.value)} /></Field>
+          <Field label="อำเภอ"><input className={hl('amphoe')} value={o.area.amphoe} onChange={(e) => setArea('amphoe', e.target.value)} /></Field>
+          <Field label="จังหวัด" className="col-span-2"><input className={hl('province')} value={o.area.province} onChange={(e) => setArea('province', e.target.value)} /></Field>
         </div>
       </Section>
       <Section title="สิ่งของ" hint="ถ่ายรูปทุกชิ้นตอนรับเข้า">
@@ -158,7 +201,7 @@ function WalkIn({ notify, onSaved }) {
   );
 }
 
-export default function Repairs({ notify, view = 'list' }) {
+export default function Repairs({ notify, view = 'list', idcard = false }) {
   const [rows, setRows] = useState(null);
   const [f, setF] = useState({ type: '', status: '', open: false, q: '' });
   const query = useMemo(() => new URLSearchParams({ ...(f.type && { type: f.type }), ...(f.status && { status: f.status }),
@@ -174,7 +217,7 @@ export default function Repairs({ notify, view = 'list' }) {
           <button key={k} type="button" onClick={() => go(`/repairs?view=${k}`)} className={`rounded-full px-3 py-1.5 ${view === k ? 'bg-ink text-white' : 'bg-white'}`}>{l}</button>
         ))}
       </div>
-      {view === 'new' ? <WalkIn notify={notify} onSaved={load} /> : (
+      {view === 'new' ? <WalkIn notify={notify} onSaved={load} idcard={idcard} /> : (
         <>
           <Filters f={f} setF={setF} />
           {rows === null ? <Empty>กำลังโหลด…</Empty> : view === 'report' ? <Report rows={rows} query={query} /> : <List rows={rows} />}

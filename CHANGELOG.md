@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.1.0 — 2026-10-12
+
+**Thai ID card scan at the Fixing Centre.** On ➕ รับของที่ศูนย์, **📷 สแกนบัตรประชาชน** photographs the front of the
+owner's ID card and fills ชื่อ, นามสกุล, บ้านเลขที่, หมู่, ตำบล, อำเภอ and จังหวัด. Filled fields are yellow until the volunteer
+checks or edits them.
+
+- The photo goes to the server, which sends it to a vision model on OpenRouter (`google/gemini-3.5-flash-lite`, falling
+  back to `google/gemini-3.8-flash`) with `data_collection: deny`, so only providers that neither keep nor train on it are
+  used. The photo is held in memory only and never saved. The model is asked for the name and address only, and the
+  server drops anything that looks like an ID number. The ID number, birth date and face are never stored.
+- Ask the owner first; the form says so. Needs signal, as registering does.
+- Off unless `OPENROUTER_API_KEY` is set (optional `IDCARD_MODELS`, `OPENROUTER_BASE`). Open to whoever runs the centre.
+- The walk-in form has a **บ้านเลขที่** field. It appears in the report and CSV, in the export with personal data only,
+  and is removed by ลบข้อมูลส่วนบุคคล.
+- Model choice: on 24 photos of fictional cards (clean, phone-like, low resolution) gemini-3.5-flash-lite read 98.4% of
+  fields and every name, in about 2 s, for about US$0.0006 a card.
+
 ## 3.0.0 — 2026-10-11
 
 **Activities (กิจกรรม).** The app now runs several activities at once, each with its own members, roles, screens and

@@ -12,7 +12,7 @@ export const repairStaff = (role, modules) => ['fixer', 'office', 'manager', 'ad
   || (role === 'volunteer' && !modules.includes('visits'));
 const TYPE_ORDER = Object.keys(REPAIR_TYPES);
 const str = (v, max = 200) => (v == null || String(v).trim() === '' ? null : String(v).trim().slice(0, max));
-const AREA_KEYS = ['moo', 'village', 'tambon', 'amphoe', 'province'];
+const AREA_KEYS = ['house_no', 'moo', 'village', 'tambon', 'amphoe', 'province'];
 export const areaOf = (a = {}) => Object.fromEntries(AREA_KEYS.map((k) => [k, str(a[k], 100)]));
 export const removeFiles = (files) => { for (const f of files || []) fs.rm(f.path, () => {}); };
 
@@ -96,9 +96,9 @@ export function mountRepairs(app, { need, upload, mod }) {
   // Report: every item, grouped by type and in queue order. UTF-8 BOM so Excel reads the Thai.
   app.get('/repairs/report.csv', need(), mod('repairs'), staff, (req, res) => {
     const head = ['เลขคิว', 'ประเภท', 'ระบุประเภท', 'ยี่ห้อ/รุ่น', 'อาการ', 'สถานะ', 'เจ้าของ', 'โทรศัพท์', 'LINE', 'อีเมล',
-      'หมู่', 'หมู่บ้าน', 'ตำบล', 'อำเภอ', 'จังหวัด', 'ลงทะเบียน', 'อัปเดตล่าสุด', 'บันทึกเยี่ยมบ้าน'];
+      'บ้านเลขที่', 'หมู่', 'หมู่บ้าน', 'ตำบล', 'อำเภอ', 'จังหวัด', 'ลงทะเบียน', 'อัปเดตล่าสุด', 'บันทึกเยี่ยมบ้าน'];
     const lines = listItems(req.query).map((r) => [r.queue, r.type_label, r.type_other, r.brand, r.problem, REPAIR_STATUS[r.status],
-      r.owner_name, r.phone, r.line, r.email, r.area.moo, r.area.village, r.area.tambon, r.area.amphoe, r.area.province,
+      r.owner_name, r.phone, r.line, r.email, r.area.house_no, r.area.moo, r.area.village, r.area.tambon, r.area.amphoe, r.area.province,
       local(r.created_at), local(r.updated_at), r.visit_id ? `#${r.visit_id}` : 'รับที่ศูนย์'].map(csvCell).join(','));
     res.set('Content-Type', 'text/csv; charset=utf-8')
       .set('Content-Disposition', `attachment; filename="repairs-${new Date().toISOString().slice(0, 10)}.csv"`)

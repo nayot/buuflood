@@ -94,6 +94,11 @@ User-facing documentation is in README.md; this file covers conventions only.
   registers at the centre. Item photos are multipart files named `item_<item uuid>` (multer `.any()`). Visits from
   2.0–2.2 may still have `repair_items` rows. Roles `fixer`, `office`, `manager`, `admin` see the tab, and `volunteer` too when the activity has no `visits`
   module (`repairStaff()`). Queue numbers restart in each activity.
+- **ID card scan** (`server/idcard.js`, `IdCardScan` in `pages/Repairs.jsx`): `POST /api/a/<id>/repairs/idcard`, one
+  photo in memory (multer memoryStorage, never on disk) → OpenRouter `models` [first, fallback] with
+  `provider.data_collection: 'deny'` → only name/address fields (`cleanCard()` drops 13-digit runs). Off without
+  `OPENROUTER_API_KEY` (`/me` → `idcard`). Never store or log the photo, the ID number or the model's raw reply.
+  Tests use a mock via `OPENROUTER_BASE`; never test with real cards.
 - **Local testing:** `.env` with `DEV_AUTH=1`, then `/auth/dev?email=x@eng.buu.ac.th[&admin=1]` and, to join an activity,
   `&activity=2&role=responder&specialty=electrical`.
   DEV_AUTH is ignored when `NODE_ENV=production`. The test login redirects to `PUBLIC_URL`, so the session cookie lands
