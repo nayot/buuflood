@@ -64,6 +64,9 @@ Roles are per activity (`memberships`), except `admin`, which is an account role
   the centre. The queue number is the type prefix plus a running number per type (`shared/repairs.js`), issued by
   the server, so a visit saved offline gets its numbers when it uploads. The report groups items by type in queue
   order with the owner's contacts; print it or download CSV.
+- **ID card scan (Fixing Centre walk-ins):** a photo of the owner's Thai ID card fills the name and address. The server
+  passes it to a vision model on OpenRouter (`OPENROUTER_API_KEY`; models in `IDCARD_MODELS`) and keeps nothing; see
+  `server/idcard.js`.
 - **LINE referral:** a yellow mental-health result can be handed over to the BUU Flood Help LINE Official Account. The
   villager scans a QR code that opens the chat with a referral code; the bot replies there with a greeting written by the nursing team for that screening result, and a brief
   for the professional who takes over in LINE OA Manager. Needs `LINE_OA_ID`, `LINE_CHANNEL_SECRET` and
@@ -77,6 +80,8 @@ Roles are per activity (`memberships`), except `admin`, which is an account role
 - Since 2.0 the app collects only the name, address and a contact (phone, LINE or email; at least one, or a
   "no contact" tick). Contacts are encrypted at rest (AES-256-GCM, key `DATA_KEY`). National IDs and the relief-form
   fields of 1.x visits stay in the database but are no longer shown; purge them when the project ends.
+- The ID card scan sends the card photo to OpenRouter (providers that keep no data) and stores none of it; only the
+  name and address fields the volunteer checks are saved.
 - The 2Q/9Q/8Q answers are health data: only admins, the volunteer who asked and mental-health responders see them.
   Others see the level and the totals.
 - When an activity is over: archive it in the app, export what the follow-up needs, then remove its personal data

@@ -369,12 +369,12 @@ function volunteersCsv(pii) {
 
 function repairsCsv(pii) {
   const head = ['เลขคิว', 'ประเภท', 'ระบุประเภท', 'อาการ', 'สถานะ', 'ตำบล', 'อำเภอ', 'ลงทะเบียน', 'อัปเดตล่าสุด'];
-  if (pii) head.push('เจ้าของ', 'โทรศัพท์', 'LINE', 'ยี่ห้อ/รุ่น');
+  if (pii) head.push('เจ้าของ', 'โทรศัพท์', 'LINE', 'ยี่ห้อ/รุ่น', 'บ้านเลขที่', 'หมู่');
   const rows = db.prepare('SELECT * FROM repair_items ORDER BY type, seq').all().map((r) => {
     const a = json(r.area, {});
     const out = [queueNo(r.type, r.seq), REPAIR_TYPES[r.type] || r.type, r.type_other, r.problem, REPAIR_STATUS[r.status] || r.status,
       a.tambon, a.amphoe, local(r.created_at), local(r.updated_at)];
-    if (pii) out.push(r.owner_name, decrypt(r.phone_enc), decrypt(r.line_enc), r.brand);
+    if (pii) out.push(r.owner_name, decrypt(r.phone_enc), decrypt(r.line_enc), r.brand, a.house_no, a.moo);
     return out;
   });
   return [head, ...rows];

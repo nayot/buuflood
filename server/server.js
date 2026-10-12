@@ -13,6 +13,7 @@ import { db, central, json, withDb, uploadDir, activityDb, sandboxDb, getActivit
 import { encrypt, decrypt } from './crypto.js';
 import { geocodePending } from './geocode.js';
 import { mountRepairs, itemsError, itemsOfVisit, removeFiles, repairStaff } from './repairs.js';
+import { mountIdcard, idcardEnabled } from './idcard.js';
 import { mountLine, lineEnabled, LINE_OA, upsertReferral, referralConflict, mentalOf, markReferred, deliver, referralOfVisit } from './line.js';
 import { mountActivities, mountActivityAdmin } from './activities.js';
 import { parseCode } from '../shared/line.js';
@@ -293,7 +294,8 @@ ar.get('/me', (req, res) => {
     repair_staff: req.user.repairStaff, can_test: req.canTest,
     test: req.test ? { until: req.session.test.until } : null,
     pending_members: isLead(req.user) ? central.prepare("SELECT COUNT(*) AS n FROM memberships WHERE activity_id = ? AND role = 'pending'").get(a.id).n : 0,
-    line_oa: lineEnabled && req.modules.includes('visits') ? LINE_OA : null });
+    line_oa: lineEnabled && req.modules.includes('visits') ? LINE_OA : null,
+    idcard: idcardEnabled && req.modules.includes('repairs') && req.user.repairStaff });
 });
 
 // ---------------------------------------------------------------- admin test mode (per activity)
@@ -520,6 +522,7 @@ ar.get('/photos/:id', need(), (req, res) => {
   res.sendFile(path.join(req.uploadDir, path.basename(p.filename)));
 });
 
+mountIdcard(ar, { need, mod });
 mountRepairs(ar, { need, upload, mod });
 mountLine(app, ar, { need, mod });
 mountActivityAdmin(ar, { need, LEAD });

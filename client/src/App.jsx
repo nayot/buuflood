@@ -136,7 +136,7 @@ export default function App() {
   const test = act?.test || null; // { until } while test mode is on in this activity
   // What the pages call `me`: the account plus the role in the activity on screen.
   const me = account && act ? { ...account, role: act.role, specialty: act.specialty, specialties: act.specialties,
-    repair_staff: act.repair_staff, line_oa: act.line_oa, pending_members: act.pending_members } : account && { ...account, role: null };
+    repair_staff: act.repair_staff, line_oa: act.line_oa, idcard: act.idcard, pending_members: act.pending_members } : account && { ...account, role: null };
   const loc = useLocationSharing(account && act ? account : null);
   const ann = useAnnouncements(account);
 
@@ -170,7 +170,7 @@ export default function App() {
     setActivity(aid);
     return api(`api/a/${aid}/me`).then((r) => {
       setAct({ ...r.activity, role: r.role, specialty: r.specialty, specialties: r.specialties, repair_staff: r.repair_staff,
-        can_test: r.can_test, test: r.test, pending_members: r.pending_members, line_oa: r.line_oa });
+        can_test: r.can_test, test: r.test, pending_members: r.pending_members, line_oa: r.line_oa, idcard: r.idcard });
       setTestMode(!!r.test); setOutboxMode(!!r.test);
     }).catch(() => { setAid(null); saveActivity(null); setAct(null); });
   }, [aid]);
@@ -241,7 +241,7 @@ export default function App() {
     if (p.startsWith('/visit/')) return <VisitDetail id={p.split('/')[2]} me={me} notify={notify} />;
     if (p === '/tickets' && seesTickets(me.role)) return <Tickets me={me} notify={notify} onChange={(n) => setOpenTickets(n)} />;
     if (p === '/map' && seesTickets(me.role)) return <Dashboard me={me} />;
-    if (p === '/repairs' && me.repair_staff) return <Repairs notify={notify} view={query.get('view') || 'list'} />;
+    if (p === '/repairs' && me.repair_staff) return <Repairs notify={notify} view={query.get('view') || 'list'} idcard={!!me.idcard} />;
     if (p.startsWith('/repair/')) return <RepairDetail id={p.split('/')[2]} me={me} notify={notify} />;
     if (p === '/members' && lead) return <Members me={me} activity={act} notify={notify} refreshMe={refreshAct} />;
     if (p === '/summary' && lead) return <Summary me={me} activity={act} />;
