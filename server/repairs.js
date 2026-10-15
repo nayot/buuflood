@@ -6,10 +6,10 @@ import { encrypt, decrypt, ID_CODE_RE } from './crypto.js';
 import { REPAIR_TYPES, REPAIR_STATUS, ITEM_PHOTOS_MAX, ITEMS_MAX, queueNo } from '../shared/repairs.js';
 import { contactError, cleanPhone, cleanLine, cleanEmail } from '../shared/contact.js';
 
-// Who runs the centre: fixers, office staff and the activity's leads, and every member when the activity is a Fixing
-// Centre day without home visits (set as req.user.repairStaff by the activity middleware in server.js).
-export const repairStaff = (role, modules) => ['fixer', 'office', 'manager', 'admin'].includes(role)
-  || (role === 'volunteer' && !modules.includes('visits'));
+// Who runs the centre: fixers, office staff, volunteers and the activity's leads (set as req.user.repairStaff by the
+// activity middleware in server.js, only when the activity has the Fixing Centre module).
+export const repairStaff = (role, modules) => modules.includes('repairs')
+  && ['fixer', 'office', 'volunteer', 'manager', 'admin'].includes(role);
 const TYPE_ORDER = Object.keys(REPAIR_TYPES);
 const str = (v, max = 200) => (v == null || String(v).trim() === '' ? null : String(v).trim().slice(0, max));
 const AREA_KEYS = ['house_no', 'moo', 'village', 'tambon', 'amphoe', 'province'];

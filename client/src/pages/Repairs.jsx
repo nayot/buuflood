@@ -7,6 +7,7 @@ import { contactError } from '../../../shared/contact.js';
 import { Empty, Field, Section } from '../components/ui.jsx';
 import ContactFields from '../components/ContactFields.jsx';
 import RepairItems, { blankItem, itemsProblem, itemsPayload } from '../components/RepairItems.jsx';
+import CardCamera, { liveCamera } from '../components/CardCamera.jsx';
 
 const VIEWS = { list: 'รายการ', report: 'รายงาน', new: '➕ รับของที่ศูนย์' };
 const contactLine = (r) => [r.phone, r.line && `LINE ${r.line}`, r.email].filter(Boolean).join(' · ') || 'ไม่มีช่องทางติดต่อ';
@@ -98,10 +99,11 @@ const SCAN_ERRORS = { 422: 'อ่านชื่อจากรูปไม่�
 function IdCardScan({ onRead, notify }) {
   const input = useRef(null);
   const [busy, setBusy] = useState(false);
-  const pick = async (e) => {
-    const f = e.target.files?.[0];
-    e.target.value = '';
-    if (!f) return;
+  const [camera, setCamera] = useState(false);
+  const [noCamera, setNoCamera] = useState(false); // live camera refused or missing: use the file input from now on
+  const pick = (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) read(f); };
+  const start = () => (liveCamera() && !noCamera ? setCamera(true) : input.current.click());
+  const read = async (f) => {
     if (!navigator.onLine) return notify('ต้องมีสัญญาณเพื่อสแกนบัตร');
     setBusy(true);
     try {
@@ -115,7 +117,9 @@ function IdCardScan({ onRead, notify }) {
   return (
     <div className="space-y-1">
       <input ref={input} type="file" accept="image/*" capture="environment" className="hidden" onChange={pick} />
-      <button type="button" disabled={busy} onClick={() => input.current.click()} className="btn-ghost w-full">
+      {camera && <CardCamera onShot={(b) => { setCamera(false); read(b); }} onClose={() => setCamera(false)}
+        onFail={() => { setCamera(false); setNoCamera(true); notify('เปิดกล้องไม่ได้ กดสแกนอีกครั้งเพื่อถ่ายหรือเลือกรูป'); }} />}
+      <button type="button" disabled={busy} onClick={start} className="btn-ghost w-full">
         {busy ? 'กำลังอ่านบัตร…' : '📷 สแกนบัตรประชาชน (กรอกชื่อและที่อยู่ให้)'}
       </button>
       <p className="text-xs text-neutral-500">ขออนุญาตเจ้าของก่อนถ่าย ถ่ายด้านหน้าบัตรให้เต็มใบ ระบบกรอกชื่อและที่อยู่ให้ และใช้เลขบัตรตรวจสิทธิ์

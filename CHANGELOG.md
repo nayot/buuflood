@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.3.0 — 2026-10-15
+
+- **Volunteers help at the Fixing Centre** in every activity that has it, not only in Fixing-Centre-only activities:
+  the 🔧 ศูนย์ซ่อม tab, ➕ รับของที่ศูนย์ (with the ID card scan), status updates and the report. Responders still don't.
+- **ID card scan on Android opens the camera.** Android in-app browsers (LINE, Facebook) and some vendor browsers ignore
+  the camera hint on the photo input and went straight to the album. On Android the scan now opens a live back-camera
+  view with a card frame (📷 ถ่าย / ยกเลิก). If the camera is refused or missing, the next tap falls back to the old photo
+  picker. iPhone is unchanged.
+
 ## 3.2.0 — 2026-10-12
 
 **One item per person at the Fixing Centre.**

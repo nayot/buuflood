@@ -32,7 +32,7 @@ Roles are per activity (`memberships`), except `admin`, which is an account role
 
 | Role | Can do |
 |---|---|
-| `volunteer` (default when joining) | Record visits, see own visits, share location; in a Fixing-Centre-only activity, run the centre |
+| `volunteer` (default when joining) | Record visits, see own visits, share location; run the Fixing Centre when the activity has one |
 | `responder` + one or more specialties | Tickets in their specialties only; claim, update, close, navigate |
 | `fixer` | Fixing Centre: walk-in registration, item status, report and CSV |
 | `office` | All visits, supply and other tickets, every red ticket, dashboard, Fixing Centre |
